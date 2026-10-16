@@ -380,7 +380,8 @@ export async function sendMessageWithAttachment(
   const messagesColRef = collection(db, 'chats', chat.id, 'messages');
   const chatDocRef = doc(db, 'chats', chat.id);
 
-  const displayText = text.trim() || (attachment.type === 'image' ? '📷 Foto' : `📄 ${attachment.name}`);
+  const userTypedText = text.trim();
+  const previewText = userTypedText || (attachment.type === 'image' ? '📷 Foto' : `📄 ${attachment.name}`);
 
   try {
     await addDoc(messagesColRef, {
@@ -389,7 +390,7 @@ export async function sendMessageWithAttachment(
       senderName: currentUser.displayName,
       senderAvatarColor: currentUser.avatarColor,
       senderPhotoURL: currentUser.photoURL || '',
-      text: displayText,
+      text: userTypedText,
       attachmentUrl: attachment.url,
       attachmentType: attachment.type,
       attachmentName: attachment.name,
@@ -400,7 +401,7 @@ export async function sendMessageWithAttachment(
 
     const otherParticipants = chat.participants.filter(id => id !== currentUser.userId);
     await updateDoc(chatDocRef, {
-      lastMessageText: displayText,
+      lastMessageText: previewText,
       lastMessageSenderId: currentUser.userId,
       lastMessageSenderName: currentUser.displayName,
       lastMessageAt: serverTimestamp(),

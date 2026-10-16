@@ -89,13 +89,34 @@ service cloud.firestore {
         allow create: if isParticipantOfChat()
                       && incoming().senderId == request.auth.uid
                       && incoming().text is string
-                      && incoming().text.size() > 0
+                      && incoming().text.size() >= 0
                       && incoming().text.size() <= 2000
                       && (!('audioData' in incoming()) || (incoming().audioData is string && incoming().audioData.size() <= 500000))
                       && (!('attachmentUrl' in incoming()) || (incoming().attachmentUrl is string && incoming().attachmentUrl.size() <= 900000));
         allow update: if isParticipantOfChat();
         allow delete: if isParticipantOfChat() && existing().senderId == request.auth.uid;
       }
+    }
+
+    // Audio & Video Calls
+    match /calls/{callId} {
+      allow get: if isSignedIn() && (
+        resource == null ||
+        resource.data.callerId == request.auth.uid || 
+        resource.data.receiverId == request.auth.uid ||
+        ('participants' in resource.data && resource.data.participants is list && request.auth.uid in resource.data.participants)
+      );
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && incoming().callerId == request.auth.uid;
+      allow update: if isSignedIn() && (
+        resource.data.callerId == request.auth.uid || 
+        resource.data.receiverId == request.auth.uid ||
+        ('participants' in resource.data && resource.data.participants is list && request.auth.uid in resource.data.participants)
+      );
+      allow delete: if isSignedIn() && (
+        resource.data.callerId == request.auth.uid || 
+        resource.data.receiverId == request.auth.uid
+      );
     }
   }
 }

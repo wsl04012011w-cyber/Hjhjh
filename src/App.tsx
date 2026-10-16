@@ -7,8 +7,17 @@ import { ChatArea } from './components/ChatArea';
 import { EmptyChatState } from './components/EmptyChatState';
 import { FriendsModal } from './components/FriendsModal';
 import { ProfileModal } from './components/ProfileModal';
-import { Chat } from './types/chat';
+import { Chat, CallSession } from './types/chat';
 import { subscribeToUserChats } from './services/chatService';
+import { 
+  startCallSession, 
+  answerCallSession, 
+  declineCallSession, 
+  subscribeToIncomingCalls, 
+  subscribeToCallSession 
+} from './services/callService';
+import { CallModal } from './components/CallModal';
+import { IncomingCallAlert } from './components/IncomingCallAlert';
 import { MessageSquare, Users } from 'lucide-react';
 
 const MainApp: React.FC = () => {
@@ -17,6 +26,10 @@ const MainApp: React.FC = () => {
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [isFriendsModalOpen, setIsFriendsModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+
+  // Voice Call States
+  const [activeCall, setActiveCall] = useState<CallSession | null>(null);
+  const [incomingCall, setIncomingCall] = useState<CallSession | null>(null);
 
   // Subscribe to user's chats in real time
   useEffect(() => {
@@ -40,6 +53,87 @@ const MainApp: React.FC = () => {
       unsubscribe();
     };
   }, [currentUser]);
+
+  // Subscribe to incoming calls in real-time
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const unsubscribe = subscribeToIncomingCalls(currentUser.uid, (call) => {
+      // Don't show incoming if we're already in that call
+      if (call && activeCall?.id === call.id) return;
+      setIncomingCall(call);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [currentUser, activeCall?.id]);
+
+  // Subscribe to updates on the active call session
+  useEffect(() => {
+    if (!activeCall?.id) return;
+
+    const unsubscribe = subscribeToCallSession(activeCall.id, (updated) => {
+      if (!updated || updated.status === 'ended' || updated.status === 'declined') {
+        setActiveCall(null);
+      } else {
+        setActiveCall(updated);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [activeCall?.id]);
+
+  // Handler to start a new voice call
+  const handleStartCall = async (chat: Chat) => {
+    if (!userProfile) return;
+    try {
+      const callId = await startCallSession(chat, userProfile);
+      const isGroup = chat.type === 'group';
+      const otherId = chat.participants.find((id) => id !== userProfile.userId) || '';
+      const otherDetails = chat.participantDetails?.[otherId];
+
+      setActiveCall({
+        id: callId,
+        chatId: chat.id,
+        chatName: chat.name || '',
+        isGroup,
+        callerId: userProfile.userId,
+        callerName: userProfile.displayName,
+        callerAvatarColor: userProfile.avatarColor,
+        callerPhotoURL: userProfile.photoURL,
+        receiverId: otherId,
+        receiverName: otherDetails?.displayName || chat.name || 'Amigo',
+        receiverAvatarColor: otherDetails?.avatarColor,
+        receiverPhotoURL: otherDetails?.photoURL,
+        participants: chat.participants,
+        status: 'ringing',
+        callerMuted: false,
+        receiverMuted: false,
+      });
+    } catch (err) {
+      console.error('Erro ao iniciar chamada:', err);
+    }
+  };
+
+  // Handler to answer an incoming call
+  const handleAnswerCall = async () => {
+    if (!incomingCall) return;
+    const callToAnswer = incomingCall;
+    setIncomingCall(null);
+    setActiveCall(callToAnswer);
+    await answerCallSession(callToAnswer.id);
+  };
+
+  // Handler to decline an incoming call
+  const handleDeclineCall = async () => {
+    if (!incomingCall) return;
+    const callToDecline = incomingCall;
+    setIncomingCall(null);
+    await declineCallSession(callToDecline.id);
+  };
 
   // Loading indicator on boot
   if (loading) {
@@ -83,6 +177,7 @@ const MainApp: React.FC = () => {
           <ChatArea
             chat={activeChat}
             onBack={() => setActiveChatId(null)}
+            onStartCall={handleStartCall}
           />
         ) : (
           <EmptyChatState
@@ -104,6 +199,24 @@ const MainApp: React.FC = () => {
           <Users className="w-4 h-4 sm:w-5 sm:h-5" />
           <span>Amigos</span>
         </button>
+      )}
+
+      {/* Incoming Call Notification Pop-up */}
+      {incomingCall && (
+        <IncomingCallAlert
+          call={incomingCall}
+          onAnswer={handleAnswerCall}
+          onDecline={handleDeclineCall}
+        />
+      )}
+
+      {/* Active Call Modal (Full or Minimized Floating Dock) */}
+      {activeCall && (
+        <CallModal
+          call={activeCall}
+          currentUserId={userProfile.userId}
+          onClose={() => setActiveCall(null)}
+        />
       )}
 
       {/* Friends & Add Friend Modal */}

@@ -77,6 +77,22 @@
         "createdAt": { "type": "string" }
       },
       "required": ["id", "chatId", "senderId", "senderName", "text"]
+    },
+    "Call": {
+      "title": "Call",
+      "description": "Voice or video call session between users",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "chatId": { "type": "string" },
+        "callerId": { "type": "string" },
+        "callerName": { "type": "string" },
+        "receiverId": { "type": "string" },
+        "receiverName": { "type": "string" },
+        "status": { "type": "string", "enum": ["ringing", "connected", "ended", "declined"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "chatId", "callerId", "receiverId", "status"]
     }
   },
   "firestore": {
@@ -95,6 +111,10 @@
     "/chats/{chatId}/messages/{messageId}": {
       "schema": { "$ref": "#/entities/Message" },
       "description": "Messages inside a chat"
+    },
+    "/calls/{callId}": {
+      "schema": { "$ref": "#/entities/Call" },
+      "description": "Active and past audio call signaling sessions"
     }
   }
 }

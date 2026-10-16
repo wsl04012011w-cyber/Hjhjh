@@ -30,12 +30,14 @@ import {
   Paperclip,
   X,
   FileText,
-  Pin
+  Pin,
+  Phone
 } from 'lucide-react';
 
 interface ChatAreaProps {
   chat: Chat;
   onBack: () => void;
+  onStartCall: (chat: Chat) => void;
   className?: string;
 }
 
@@ -46,7 +48,7 @@ interface PendingAttachment {
   size: number;
 }
 
-export const ChatArea: React.FC<ChatAreaProps> = ({ chat, onBack, className = '' }) => {
+export const ChatArea: React.FC<ChatAreaProps> = ({ chat, onBack, onStartCall, className = '' }) => {
   const { userProfile } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputVal, setInputVal] = useState('');
@@ -458,16 +460,27 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat, onBack, className = ''
           </div>
         </div>
 
-        {/* Right action */}
-        {isGroup && (
+        {/* Right actions */}
+        <div className="flex items-center gap-2 flex-shrink-0">
           <button
-            onClick={() => setShowGroupInfo(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-zinc-200 hover:text-white text-xs font-medium transition-colors cursor-pointer border border-white/5 backdrop-blur-md"
+            onClick={() => onStartCall(chat)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white text-xs font-semibold transition-all active:scale-95 cursor-pointer border border-emerald-500/30 shadow-sm"
+            title="Iniciar ligação / chamada de voz"
           >
-            <Users className="w-4 h-4 text-purple-400" />
-            <span className="hidden sm:inline">Membros</span>
+            <Phone className="w-4 h-4 fill-current" />
+            <span className="hidden sm:inline">Ligar</span>
           </button>
-        )}
+
+          {isGroup && (
+            <button
+              onClick={() => setShowGroupInfo(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-zinc-200 hover:text-white text-xs font-medium transition-colors cursor-pointer border border-white/5 backdrop-blur-md"
+            >
+              <Users className="w-4 h-4 text-purple-400" />
+              <span className="hidden sm:inline">Membros</span>
+            </button>
+          )}
+        </div>
       </header>
 
       {/* Pinned message banner if any */}

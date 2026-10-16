@@ -33,6 +33,27 @@ export const MessageItem: React.FC<MessageItemProps> = ({
   const isPinned = message.pinnedFor?.includes(currentUserId);
   const isDeleted = Boolean(message.deletedForAll);
 
+  // Check whether the message contains actual user-authored text
+  const cleanText = (message.text || '').trim();
+  const lowerText = cleanText.toLowerCase();
+  const isDefaultPhotoLabel = 
+    lowerText === 'foto' || 
+    lowerText === '📷 foto' || 
+    lowerText === 'imagem' || 
+    lowerText === 'foto anexada';
+  const isAttachmentNameLabel = Boolean(
+    message.attachmentName && (cleanText === message.attachmentName.trim() || lowerText === message.attachmentName.trim().toLowerCase())
+  );
+  const isDefaultFileLabel = cleanText.startsWith('📄 ') || cleanText.startsWith('📎 ');
+
+  // Only show text paragraph if user wrote a genuine custom message
+  const hasUserText = Boolean(
+    cleanText && 
+    !isDefaultPhotoLabel && 
+    !isAttachmentNameLabel && 
+    !isDefaultFileLabel
+  );
+
   const longPressTimerRef = useRef<any>(null);
 
   const handleTouchStart = () => {
@@ -59,10 +80,10 @@ export const MessageItem: React.FC<MessageItemProps> = ({
 
     if (message.attachmentType === 'image') {
       return (
-        <div className="mb-2 overflow-hidden rounded-xl">
+        <div className={`overflow-hidden rounded-xl ${hasUserText ? 'mb-2' : ''}`}>
           <img
             src={message.attachmentUrl}
-            alt={message.attachmentName || 'Foto anexada'}
+            alt="Foto"
             className="max-h-64 sm:max-h-80 w-auto rounded-xl object-contain bg-black/20 hover:opacity-95 transition-opacity cursor-pointer"
             onClick={() => {
               const win = window.open();
@@ -75,7 +96,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
 
     if (message.attachmentType === 'txt') {
       return (
-        <div className="mb-2 p-2.5 rounded-xl bg-black/20 flex items-center justify-between gap-3 border border-white/10">
+        <div className={`p-2.5 rounded-xl bg-black/20 flex items-center justify-between gap-3 border border-white/10 ${hasUserText ? 'mb-2' : ''}`}>
           <div className="flex items-center gap-2 min-w-0">
             <div className="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-300 flex items-center justify-center flex-shrink-0">
               <FileText className="w-4 h-4" />
@@ -144,11 +165,11 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                 duration={message.audioDuration}
                 isCurrentUser={true}
               />
-            ) : (
+            ) : hasUserText || isDeleted ? (
               <p className="text-sm leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere] break-all">
                 {message.text}
               </p>
-            )}
+            ) : null}
 
             {/* Time & Delivery / Read status & Edited flag */}
             <div className="flex items-center justify-end gap-1.5 mt-1 -mb-0.5 text-[10px] text-indigo-200 select-none">
@@ -233,11 +254,11 @@ export const MessageItem: React.FC<MessageItemProps> = ({
               duration={message.audioDuration}
               isCurrentUser={false}
             />
-          ) : (
+          ) : hasUserText || isDeleted ? (
             <p className="text-sm leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere] break-all text-zinc-100">
               {message.text}
             </p>
-          )}
+          ) : null}
 
           {/* Timestamp & Edited flag */}
           <div className="flex items-center justify-end gap-1.5 mt-1 -mb-0.5 text-[10px] text-zinc-400 select-none">

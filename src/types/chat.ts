@@ -67,3 +67,31 @@ export interface Message {
   readBy: string[];
   createdAt: any;
 }
+
+export type CallStatus = 'ringing' | 'connected' | 'ended' | 'declined';
+
+export interface CallSession {
+  id: string;
+  chatId: string;
+  chatName?: string;
+  isGroup?: boolean;
+  callerId: string;
+  callerName: string;
+  callerAvatarColor?: string;
+  callerPhotoURL?: string;
+  receiverId: string;
+  receiverName: string;
+  receiverAvatarColor?: string;
+  receiverPhotoURL?: string;
+  participants?: string[];
+  status: CallStatus;
+  callerMuted?: boolean;
+  receiverMuted?: boolean;
+  offer?: any;
+  answer?: any;
+  callerCandidates?: any[];
+  receiverCandidates?: any[];
+  startedAt?: any;
+  endedAt?: any;
+  createdAt?: any;
+}
