@@ -5,19 +5,17 @@ import { LoginScreen } from './components/LoginScreen';
 import { Sidebar } from './components/Sidebar';
 import { ChatArea } from './components/ChatArea';
 import { EmptyChatState } from './components/EmptyChatState';
-import { NewDirectChatModal } from './components/NewDirectChatModal';
-import { NewGroupChatModal } from './components/NewGroupChatModal';
+import { FriendsModal } from './components/FriendsModal';
 import { ProfileModal } from './components/ProfileModal';
 import { Chat } from './types/chat';
 import { subscribeToUserChats } from './services/chatService';
-import { MessageSquare } from 'lucide-react';
+import { MessageSquare, Users } from 'lucide-react';
 
 const MainApp: React.FC = () => {
   const { currentUser, userProfile, loading } = useAuth();
   const [chats, setChats] = useState<Chat[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
-  const [isDirectModalOpen, setIsDirectModalOpen] = useState(false);
-  const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
+  const [isFriendsModalOpen, setIsFriendsModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
   // Subscribe to user's chats in real time
@@ -66,7 +64,7 @@ const MainApp: React.FC = () => {
   const activeChat = chats.find((c) => c.id === activeChatId) || null;
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-zinc-950 font-sans text-zinc-100">
+    <div className="relative flex h-screen w-screen overflow-hidden bg-zinc-950 font-sans text-zinc-100">
       {/* 
         Responsive layout:
         - On desktop (md+): both Sidebar and ChatArea visible
@@ -76,8 +74,6 @@ const MainApp: React.FC = () => {
         chats={chats}
         activeChatId={activeChatId}
         onSelectChat={(id) => setActiveChatId(id)}
-        onOpenNewDirectModal={() => setIsDirectModalOpen(true)}
-        onOpenNewGroupModal={() => setIsGroupModalOpen(true)}
         onOpenProfileModal={() => setIsProfileModalOpen(true)}
         className={`${activeChatId ? 'hidden md:flex' : 'flex'}`}
       />
@@ -90,29 +86,35 @@ const MainApp: React.FC = () => {
           />
         ) : (
           <EmptyChatState
-            onOpenNewDirectModal={() => setIsDirectModalOpen(true)}
-            onOpenNewGroupModal={() => setIsGroupModalOpen(true)}
+            onOpenFriendsModal={() => setIsFriendsModalOpen(true)}
           />
         )}
       </main>
 
-      {/* Modals */}
-      <NewDirectChatModal
-        isOpen={isDirectModalOpen}
-        onClose={() => setIsDirectModalOpen(false)}
-        onChatCreated={(chatId) => {
+      {/* 
+        Floating Action Button in the bottom-right corner:
+        Opens the Friends screen / modal with the friends list and button to add new friend.
+      */}
+      <button
+        onClick={() => setIsFriendsModalOpen(true)}
+        className="fixed bottom-5 right-5 z-40 flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs sm:text-sm shadow-xl shadow-indigo-600/30 transition-all hover:scale-105 active:scale-95 cursor-pointer border border-indigo-400/20"
+        title="Amigos e Adicionar"
+      >
+        <Users className="w-4 h-4 sm:w-5 sm:h-5" />
+        <span>Amigos</span>
+      </button>
+
+      {/* Friends & Add Friend Modal */}
+      <FriendsModal
+        isOpen={isFriendsModalOpen}
+        onClose={() => setIsFriendsModalOpen(false)}
+        chats={chats}
+        onOpenChat={(chatId) => {
           setActiveChatId(chatId);
         }}
       />
 
-      <NewGroupChatModal
-        isOpen={isGroupModalOpen}
-        onClose={() => setIsGroupModalOpen(false)}
-        onChatCreated={(chatId) => {
-          setActiveChatId(chatId);
-        }}
-      />
-
+      {/* Profile Settings Modal */}
       <ProfileModal
         isOpen={isProfileModalOpen}
         onClose={() => setIsProfileModalOpen(false)}

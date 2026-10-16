@@ -1,15 +1,13 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { MessageSquare, Users, Copy, Check, UserPlus, Sparkles } from 'lucide-react';
+import { MessageSquare, Users, Copy, Check, UserPlus } from 'lucide-react';
 
 interface EmptyChatStateProps {
-  onOpenNewDirectModal: () => void;
-  onOpenNewGroupModal: () => void;
+  onOpenFriendsModal: () => void;
 }
 
 export const EmptyChatState: React.FC<EmptyChatStateProps> = ({
-  onOpenNewDirectModal,
-  onOpenNewGroupModal,
+  onOpenFriendsModal,
 }) => {
   const { userProfile } = useAuth();
   const [copied, setCopied] = useState(false);
@@ -37,7 +35,7 @@ export const EmptyChatState: React.FC<EmptyChatStateProps> = ({
             Bem-vindo ao Papo!
           </h2>
           <p className="text-sm text-zinc-400 mt-1.5">
-            Selecione uma conversa ao lado ou comece uma nova para bater papo em tempo real.
+            Selecione uma conversa ou gerencie seus amigos para começar a conversar.
           </p>
         </div>
 
@@ -72,33 +70,19 @@ export const EmptyChatState: React.FC<EmptyChatStateProps> = ({
               </button>
             </div>
             <p className="text-[11px] text-zinc-500 mt-2">
-              Seus amigos podem te adicionar inserindo esse código de 8 caracteres.
+              Seus amigos podem te adicionar usando este código de 8 caracteres.
             </p>
           </div>
         )}
 
-        {/* Quick Action Buttons */}
-        <div className="grid grid-cols-2 gap-3 pt-2">
+        {/* Action Button */}
+        <div>
           <button
-            onClick={onOpenNewDirectModal}
-            className="flex flex-col items-center p-4 rounded-2xl bg-zinc-900 hover:bg-zinc-800/80 border border-zinc-800 hover:border-indigo-500/40 transition-all text-center group cursor-pointer shadow-sm"
+            onClick={onOpenFriendsModal}
+            className="w-full flex items-center justify-center gap-2 p-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm transition-all shadow-lg shadow-indigo-600/20 active:scale-[0.99] cursor-pointer"
           >
-            <div className="w-10 h-10 rounded-xl bg-indigo-500/10 group-hover:bg-indigo-500 text-indigo-400 group-hover:text-white flex items-center justify-center transition-colors mb-2.5">
-              <UserPlus className="w-5 h-5" />
-            </div>
-            <span className="font-bold text-xs text-white">Conversa Direta</span>
-            <span className="text-[11px] text-zinc-400 mt-0.5">Adicionar por ID</span>
-          </button>
-
-          <button
-            onClick={onOpenNewGroupModal}
-            className="flex flex-col items-center p-4 rounded-2xl bg-zinc-900 hover:bg-zinc-800/80 border border-zinc-800 hover:border-purple-500/40 transition-all text-center group cursor-pointer shadow-sm"
-          >
-            <div className="w-10 h-10 rounded-xl bg-purple-500/10 group-hover:bg-purple-500 text-purple-400 group-hover:text-white flex items-center justify-center transition-colors mb-2.5">
-              <Users className="w-5 h-5" />
-            </div>
-            <span className="font-bold text-xs text-white">Criar Grupo</span>
-            <span className="text-[11px] text-zinc-400 mt-0.5">Conversa em turma</span>
+            <Users className="w-4 h-4" />
+            <span>Ver Amigos & Adicionar Novo</span>
           </button>
         </div>
       </div>
