@@ -37,6 +37,7 @@ export const CallModal: React.FC<CallModalProps> = ({
 
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const timerRef = useRef<any>(null);
+  const wakeLockRef = useRef<any>(null);
 
   // Determine other participant's details
   const remoteName = isCaller ? call.receiverName : call.callerName;
@@ -44,15 +45,42 @@ export const CallModal: React.FC<CallModalProps> = ({
   const remotePhotoURL = isCaller ? call.receiverPhotoURL : call.callerPhotoURL;
   const remoteIsMuted = isCaller ? call.receiverMuted : call.callerMuted;
 
-  // Handle outgoing ringing tone
+  // Request notification permission and show outgoing call notification
   useEffect(() => {
     if (isCaller && isRinging) {
       callSoundService.playOutgoingRing();
     }
+
+    if ('Notification' in window) {
+      if (Notification.permission === 'granted') {
+        new Notification('Papo - Chamada', {
+          body: isRinging ? `Ligando para ${remoteName}...` : `Chamada em andamento com ${remoteName}`,
+          icon: '/icon-512.png',
+        });
+      } else if (Notification.permission !== 'denied') {
+        Notification.requestPermission();
+      }
+    }
+
+    // Request Screen Wake Lock to keep app alive in background during call
+    async function requestWakeLock() {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
+        }
+      } catch (err) {
+        console.warn('Wake Lock error:', err);
+      }
+    }
+    requestWakeLock();
+
     return () => {
       callSoundService.stopAllSounds();
+      if (wakeLockRef.current) {
+        wakeLockRef.current.release().catch(() => {});
+      }
     };
-  }, [isCaller, isRinging]);
+  }, [isCaller, isRinging, remoteName]);
 
   // Handle connection chime & WebRTC initialization
   useEffect(() => {
@@ -83,6 +111,13 @@ export const CallModal: React.FC<CallModalProps> = ({
       callSoundService.playConnectedChime();
       setupWebRTC();
 
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('Papo - Chamada Ativa', {
+          body: `Em chamada com ${remoteName}`,
+          icon: '/icon-512.png',
+        });
+      }
+
       timerRef.current = setInterval(() => {
         setDurationSeconds((prev) => prev + 1);
       }, 1000);
@@ -92,7 +127,7 @@ export const CallModal: React.FC<CallModalProps> = ({
       mounted = false;
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [isConnected, call.id, isCaller]);
+  }, [isConnected, call.id, isCaller, remoteName]);
 
   // Handle call termination from either party
   useEffect(() => {
@@ -117,11 +152,7 @@ export const CallModal: React.FC<CallModalProps> = ({
   const handleToggleMute = async () => {
     const nextMuted = !isMuted;
     setIsMuted(nextMuted);
-
-    // Mute microphone in WebRTC
     webrtcService.setMicrophoneMute(nextMuted);
-
-    // Sync to Firestore so peer sees remote mute state
     await setCallMute(call.id, isCaller, nextMuted);
   };
 
@@ -153,7 +184,6 @@ export const CallModal: React.FC<CallModalProps> = ({
 
   return (
     <>
-      {/* Hidden audio element for WebRTC remote stream */}
       <audio ref={remoteAudioRef} autoPlay playsInline />
 
       {/* MINIMIZED FLOATING BAR */}
@@ -223,7 +253,7 @@ export const CallModal: React.FC<CallModalProps> = ({
             <div className="w-full flex items-center justify-between mb-6">
               <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-[11px] text-zinc-300">
                 <Radio className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
-                <span>Chamada de Voz (WebRTC)</span>
+                <span>Chamada Ativa (Background)</span>
               </div>
 
               <button

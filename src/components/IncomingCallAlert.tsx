@@ -15,13 +15,32 @@ export const IncomingCallAlert: React.FC<IncomingCallAlertProps> = ({
   onAnswer,
   onDecline,
 }) => {
-  // Start incoming ringtone on mount, stop on unmount
+  // Start incoming ringtone and native browser notification on mount
   useEffect(() => {
     callSoundService.playIncomingRing();
+
+    if ('Notification' in window) {
+      if (Notification.permission === 'granted') {
+        new Notification('Papo - Chamada Recebida', {
+          body: `Recebendo ligação de ${call.callerName}`,
+          icon: '/icon-512.png',
+        });
+      } else if (Notification.permission !== 'denied') {
+        Notification.requestPermission().then((permission) => {
+          if (permission === 'granted') {
+            new Notification('Papo - Chamada Recebida', {
+              body: `Recebendo ligação de ${call.callerName}`,
+              icon: '/icon-512.png',
+            });
+          }
+        });
+      }
+    }
+
     return () => {
       callSoundService.stopAllSounds();
     };
-  }, []);
+  }, [call.callerName]);
 
   return (
     <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 w-[92%] max-w-md animate-in slide-in-from-top-4 duration-300">
