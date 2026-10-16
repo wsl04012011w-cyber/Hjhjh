@@ -117,6 +117,14 @@ service cloud.firestore {
         resource.data.callerId == request.auth.uid || 
         resource.data.receiverId == request.auth.uid
       );
+
+      match /callerCandidates/{candId} {
+        allow read, write: if isSignedIn();
+      }
+
+      match /receiverCandidates/{candId} {
+        allow read, write: if isSignedIn();
+      }
     }
   }
 }
