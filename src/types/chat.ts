@@ -56,6 +56,14 @@ export interface Message {
   text: string;
   audioData?: string; // Base64 audio Data URL
   audioDuration?: number; // Duration in seconds
+  attachmentUrl?: string; // Base64 Data URL for image or txt
+  attachmentType?: 'image' | 'txt';
+  attachmentName?: string;
+  attachmentSize?: number;
+  edited?: boolean;
+  deletedForAll?: boolean;
+  hiddenFor?: string[]; // Array of user UIDs who deleted message for themselves
+  pinnedFor?: string[]; // Array of user UIDs who pinned the message for themselves
   readBy: string[];
   createdAt: any;
 }

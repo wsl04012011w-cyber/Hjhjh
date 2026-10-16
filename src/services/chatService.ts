@@ -362,3 +362,133 @@ export function subscribeToMessages(
     }
   );
 }
+
+/**
+ * Sends a message with an attached image or txt file.
+ */
+export async function sendMessageWithAttachment(
+  chat: Chat,
+  currentUser: UserProfile,
+  text: string,
+  attachment: {
+    url: string;
+    type: 'image' | 'txt';
+    name: string;
+    size: number;
+  }
+): Promise<void> {
+  const messagesColRef = collection(db, 'chats', chat.id, 'messages');
+  const chatDocRef = doc(db, 'chats', chat.id);
+
+  const displayText = text.trim() || (attachment.type === 'image' ? '📷 Foto' : `📄 ${attachment.name}`);
+
+  try {
+    await addDoc(messagesColRef, {
+      chatId: chat.id,
+      senderId: currentUser.userId,
+      senderName: currentUser.displayName,
+      senderAvatarColor: currentUser.avatarColor,
+      senderPhotoURL: currentUser.photoURL || '',
+      text: displayText,
+      attachmentUrl: attachment.url,
+      attachmentType: attachment.type,
+      attachmentName: attachment.name,
+      attachmentSize: attachment.size,
+      readBy: [currentUser.userId],
+      createdAt: serverTimestamp(),
+    });
+
+    const otherParticipants = chat.participants.filter(id => id !== currentUser.userId);
+    await updateDoc(chatDocRef, {
+      lastMessageText: displayText,
+      lastMessageSenderId: currentUser.userId,
+      lastMessageSenderName: currentUser.displayName,
+      lastMessageAt: serverTimestamp(),
+      unreadBy: otherParticipants,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `chats/${chat.id}/messages`);
+  }
+}
+
+/**
+ * Edits the text of an existing message.
+ */
+export async function editMessage(
+  chatId: string,
+  messageId: string,
+  newText: string
+): Promise<void> {
+  const trimmed = newText.trim();
+  if (!trimmed) return;
+
+  const msgRef = doc(db, 'chats', chatId, 'messages', messageId);
+  try {
+    await updateDoc(msgRef, {
+      text: trimmed,
+      edited: true,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `chats/${chatId}/messages/${messageId}`);
+  }
+}
+
+/**
+ * Deletes a message for everyone in the chat.
+ */
+export async function deleteMessageForEveryone(
+  chatId: string,
+  messageId: string
+): Promise<void> {
+  const msgRef = doc(db, 'chats', chatId, 'messages', messageId);
+  try {
+    await updateDoc(msgRef, {
+      text: '🚫 Esta mensagem foi apagada',
+      deletedForAll: true,
+      attachmentUrl: '',
+      audioData: '',
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `chats/${chatId}/messages/${messageId}`);
+  }
+}
+
+/**
+ * Hides a message only for the current user.
+ */
+export async function hideMessageForMe(
+  chatId: string,
+  messageId: string,
+  userId: string
+): Promise<void> {
+  const msgRef = doc(db, 'chats', chatId, 'messages', messageId);
+  try {
+    await updateDoc(msgRef, {
+      hiddenFor: arrayUnion(userId),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `chats/${chatId}/messages/${messageId}`);
+  }
+}
+
+/**
+ * Toggles pinning a message for the current user.
+ */
+export async function togglePinMessage(
+  chatId: string,
+  messageId: string,
+  userId: string,
+  currentlyPinned: boolean
+): Promise<void> {
+  const msgRef = doc(db, 'chats', chatId, 'messages', messageId);
+  try {
+    await updateDoc(msgRef, {
+      pinnedFor: currentlyPinned ? arrayRemove(userId) : arrayUnion(userId),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `chats/${chatId}/messages/${messageId}`);
+  }
+}

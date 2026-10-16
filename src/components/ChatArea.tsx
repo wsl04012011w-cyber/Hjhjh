@@ -3,13 +3,20 @@ import { useAuth } from '../context/AuthContext';
 import { Chat, Message } from '../types/chat';
 import { 
   sendMessage, 
+  sendMessageWithAttachment,
   sendAudioMessage,
+  editMessage,
+  deleteMessageForEveryone,
+  hideMessageForMe,
+  togglePinMessage,
   subscribeToMessages, 
   markChatAsRead 
 } from '../services/chatService';
 import { MessageItem } from './MessageItem';
 import { Avatar } from './Avatar';
 import { GroupInfoModal } from './GroupInfoModal';
+import { MessageActionMenu } from './MessageActionMenu';
+import { EditMessageModal } from './EditMessageModal';
 import { 
   Send, 
   ArrowLeft, 
@@ -20,13 +27,23 @@ import {
   Sparkles,
   Mic,
   Trash2,
-  Square
+  Paperclip,
+  X,
+  FileText,
+  Pin
 } from 'lucide-react';
 
 interface ChatAreaProps {
   chat: Chat;
   onBack: () => void;
   className?: string;
+}
+
+interface PendingAttachment {
+  url: string;
+  type: 'image' | 'txt';
+  name: string;
+  size: number;
 }
 
 export const ChatArea: React.FC<ChatAreaProps> = ({ chat, onBack, className = '' }) => {
@@ -37,10 +54,18 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat, onBack, className = ''
   const [showGroupInfo, setShowGroupInfo] = useState(false);
   const [copiedId, setCopiedId] = useState(false);
 
+  // Attachment state
+  const [pendingAttachment, setPendingAttachment] = useState<PendingAttachment | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // Audio recording state
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [audioError, setAudioError] = useState<string | null>(null);
+
+  // Message action menu state
+  const [selectedMessageForAction, setSelectedMessageForAction] = useState<Message | null>(null);
+  const [messageToEdit, setMessageToEdit] = useState<Message | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -91,12 +116,81 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat, onBack, className = ''
     };
   }, []);
 
+  // Handle file attachment selection (images and .txt)
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      alert('O arquivo selecionado deve ter no máximo 2 MB.');
+      return;
+    }
+
+    if (file.type.startsWith('image/')) {
+      // Compress and resize image client-side to maintain high performance
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          const maxDim = 900;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
+
+          setPendingAttachment({
+            url: dataUrl,
+            type: 'image',
+            name: file.name,
+            size: file.size,
+          });
+        };
+        img.src = event.target?.result as string;
+      };
+      reader.readAsDataURL(file);
+    } else if (file.name.endsWith('.txt') || file.type === 'text/plain') {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const dataUrl = event.target?.result as string;
+        setPendingAttachment({
+          url: dataUrl,
+          type: 'txt',
+          name: file.name,
+          size: file.size,
+        });
+      };
+      reader.readAsDataURL(file);
+    } else {
+      alert('Por favor, selecione uma imagem ou um arquivo de texto (.txt).');
+    }
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   const handleSend = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!inputVal.trim() || !userProfile || sending) return;
+    if ((!inputVal.trim() && !pendingAttachment) || !userProfile || sending) return;
 
     const text = inputVal.trim();
+    const attachmentToSend = pendingAttachment;
+
     setInputVal('');
+    setPendingAttachment(null);
     setSending(true);
 
     // Blur input so mobile keyboards DO NOT reopen automatically
@@ -105,10 +199,15 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat, onBack, className = ''
     }
 
     try {
-      await sendMessage(chat, userProfile, text);
+      if (attachmentToSend) {
+        await sendMessageWithAttachment(chat, userProfile, text, attachmentToSend);
+      } else {
+        await sendMessage(chat, userProfile, text);
+      }
     } catch (error) {
       console.error('Erro ao enviar mensagem:', error);
       setInputVal(text); // Restore on error
+      setPendingAttachment(attachmentToSend);
     } finally {
       setSending(false);
     }
@@ -133,7 +232,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat, onBack, className = ''
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
-      // Select supported mimeType
       let mimeType = 'audio/webm;codecs=opus';
       if (!MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
         if (MediaRecorder.isTypeSupported('audio/mp4')) {
@@ -162,7 +260,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat, onBack, className = ''
       timerIntervalRef.current = setInterval(() => {
         setRecordingSeconds((prev) => {
           if (prev >= 60) {
-            // Auto stop at 60s
             stopAndSendRecording();
             return 60;
           }
@@ -192,7 +289,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat, onBack, className = ''
       const mimeType = recorder.mimeType || 'audio/webm';
       const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
 
-      // Clean up media stream
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((track) => track.stop());
         streamRef.current = null;
@@ -201,12 +297,8 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat, onBack, className = ''
       setIsRecording(false);
       setRecordingSeconds(0);
 
-      if (audioBlob.size < 100) {
-        // Empty audio
-        return;
-      }
+      if (audioBlob.size < 100) return;
 
-      // Convert Blob to base64 Data URL
       const reader = new FileReader();
       reader.onloadend = async () => {
         const base64Data = reader.result as string;
@@ -227,7 +319,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat, onBack, className = ''
     recorder.stop();
   };
 
-  // Cancel recording without sending
   const cancelRecording = () => {
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
@@ -254,6 +345,26 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat, onBack, className = ''
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
+  // Message actions
+  const handleEditMessage = async (messageId: string, newText: string) => {
+    await editMessage(chat.id, messageId, newText);
+  };
+
+  const handleDeleteForMe = async (msg: Message) => {
+    if (!userProfile) return;
+    await hideMessageForMe(chat.id, msg.id, userProfile.userId);
+  };
+
+  const handleDeleteForEveryone = async (msg: Message) => {
+    await deleteMessageForEveryone(chat.id, msg.id);
+  };
+
+  const handleTogglePin = async (msg: Message) => {
+    if (!userProfile) return;
+    const isPinned = msg.pinnedFor?.includes(userProfile.userId) || false;
+    await togglePinMessage(chat.id, msg.id, userProfile.userId, isPinned);
+  };
+
   // Header information
   const isGroup = chat.type === 'group';
   const otherParticipant = !isGroup
@@ -273,24 +384,33 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat, onBack, className = ''
     setTimeout(() => setCopiedId(false), 2000);
   };
 
+  // Pinned message for current user (most recent pinned)
+  const pinnedMessage = messages
+    .slice()
+    .reverse()
+    .find((m) => m.pinnedFor?.includes(userProfile?.userId || ''));
+
   return (
     <div
-      className={`flex-1 flex flex-col bg-zinc-950 text-zinc-100 h-full overflow-hidden ${className}`}
+      className={`relative flex-1 flex flex-col bg-zinc-950 text-zinc-100 h-full overflow-hidden ${className}`}
     >
-      {/* Top Chat Header */}
-      <div className="h-16 px-4 border-b border-zinc-800/80 bg-zinc-900/60 backdrop-blur-md flex items-center justify-between flex-shrink-0 select-none">
+      {/* 
+        Sleek Glassmorphic Top Bar with gentle gradient and backdrop-blur
+        allowing the scrolling messages underneath to appear smoothly blurred.
+      */}
+      <header className="absolute top-0 left-0 right-0 z-20 h-16 px-4 bg-gradient-to-b from-zinc-950/90 via-zinc-950/75 to-zinc-950/50 backdrop-blur-xl border-b border-white/5 flex items-center justify-between select-none">
         <div className="flex items-center gap-3 min-w-0">
           {/* Back button on mobile */}
           <button
             onClick={onBack}
-            className="md:hidden p-2 -ml-2 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors cursor-pointer"
+            className="md:hidden p-2 -ml-2 rounded-xl text-zinc-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
             title="Voltar para conversas"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
 
           {isGroup ? (
-            <div className="w-10 h-10 rounded-xl bg-purple-600 flex items-center justify-center text-white flex-shrink-0 shadow-sm">
+            <div className="w-10 h-10 rounded-xl bg-purple-600/90 flex items-center justify-center text-white flex-shrink-0 shadow-sm border border-purple-400/20">
               <Users className="w-5 h-5" />
             </div>
           ) : (
@@ -310,20 +430,20 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat, onBack, className = ''
               {shortId && (
                 <button
                   onClick={handleCopyShortId}
-                  className="font-mono text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 cursor-pointer bg-indigo-500/10 px-1.5 py-0.5 rounded border border-indigo-500/20"
+                  className="font-mono text-xs text-indigo-300 hover:text-white flex items-center gap-1 cursor-pointer bg-white/5 hover:bg-white/10 px-1.5 py-0.5 rounded-lg border border-white/10 transition-colors"
                   title="Clique para copiar ID do amigo"
                 >
                   <span>#{shortId}</span>
                   {copiedId ? (
                     <Check className="w-3 h-3 text-emerald-400" />
                   ) : (
-                    <Copy className="w-3 h-3" />
+                    <Copy className="w-3 h-3 text-zinc-400" />
                   )}
                 </button>
               )}
             </div>
 
-            {/* Subtitle: Only show for groups (member count) */}
+            {/* Subtitle: Only show for groups */}
             {isGroup && (
               <p className="text-[11px] text-zinc-400 truncate">
                 <button
@@ -342,16 +462,33 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat, onBack, className = ''
         {isGroup && (
           <button
             onClick={() => setShowGroupInfo(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white text-xs font-medium transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-zinc-200 hover:text-white text-xs font-medium transition-colors cursor-pointer border border-white/5 backdrop-blur-md"
           >
             <Users className="w-4 h-4 text-purple-400" />
             <span className="hidden sm:inline">Membros</span>
           </button>
         )}
-      </div>
+      </header>
 
-      {/* Messages Stream */}
-      <div className="flex-1 overflow-y-auto py-4 px-2 sm:px-4 space-y-1">
+      {/* Pinned message banner if any */}
+      {pinnedMessage && (
+        <div className="absolute top-16 left-0 right-0 z-10 px-4 py-1.5 bg-zinc-900/80 backdrop-blur-md border-b border-white/5 flex items-center justify-between text-xs text-zinc-300 animate-in fade-in">
+          <div className="flex items-center gap-2 min-w-0">
+            <Pin className="w-3.5 h-3.5 text-amber-400 fill-current flex-shrink-0" />
+            <span className="font-semibold text-amber-300 flex-shrink-0">Fixada:</span>
+            <span className="truncate text-zinc-300">{pinnedMessage.text}</span>
+          </div>
+          <button
+            onClick={() => handleTogglePin(pinnedMessage)}
+            className="text-[10px] text-zinc-400 hover:text-white ml-2 flex-shrink-0 cursor-pointer"
+          >
+            Desafixar
+          </button>
+        </div>
+      )}
+
+      {/* Messages Stream (padded top to scroll smoothly under glass bar) */}
+      <div className={`flex-1 overflow-y-auto px-2 sm:px-4 space-y-1 ${pinnedMessage ? 'pt-26 pb-4' : 'pt-20 pb-4'}`}>
         {messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center p-6 text-zinc-500">
             <div className="w-14 h-14 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-indigo-400 mb-3 shadow-xl">
@@ -371,7 +508,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat, onBack, className = ''
             const isCurrentUser = msg.senderId === userProfile?.userId;
             const prevMsg = messages[index - 1];
             
-            // Check if sequential (same sender within 2 minutes)
             let isSequential = false;
             if (prevMsg && prevMsg.senderId === msg.senderId) {
               const prevTime = prevMsg.createdAt?.toMillis
@@ -393,6 +529,8 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat, onBack, className = ''
                 isCurrentUser={isCurrentUser}
                 isSequential={isSequential}
                 chatType={chat.type}
+                currentUserId={userProfile?.userId || ''}
+                onOpenMenu={(m) => setSelectedMessageForAction(m)}
               />
             );
           })
@@ -410,9 +548,51 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat, onBack, className = ''
         </div>
       )}
 
-      {/* Redesigned Seamless Message & Audio Input */}
+      {/* Pending attachment preview chip */}
+      {pendingAttachment && (
+        <div className="px-4 pb-1">
+          <div className="inline-flex items-center gap-2 p-2 rounded-xl bg-zinc-900 border border-zinc-800 text-xs text-zinc-200 shadow-lg">
+            {pendingAttachment.type === 'image' ? (
+              <img
+                src={pendingAttachment.url}
+                alt="Preview"
+                className="w-10 h-10 object-cover rounded-lg border border-zinc-700"
+              />
+            ) : (
+              <div className="w-10 h-10 rounded-lg bg-indigo-500/20 text-indigo-300 flex items-center justify-center flex-shrink-0">
+                <FileText className="w-5 h-5" />
+              </div>
+            )}
+            <div className="max-w-xs truncate">
+              <p className="font-semibold truncate">{pendingAttachment.name}</p>
+              <p className="text-[10px] text-zinc-400">
+                {Math.round(pendingAttachment.size / 1024)} KB
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPendingAttachment(null)}
+              className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors ml-1 cursor-pointer"
+              title="Remover anexo"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Redesigned Seamless Message Input */}
       <div className="p-3 sm:p-4 bg-zinc-950 flex-shrink-0">
         <form onSubmit={handleSend} className="flex items-end gap-2 max-w-4xl mx-auto w-full">
+          {/* Hidden file input for photos and txt */}
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileSelect}
+            accept="image/*,.txt,text/plain"
+            className="hidden"
+          />
+
           {isRecording ? (
             /* Active Voice Recording UI */
             <div className="flex-1 min-h-[46px] px-4 py-2.5 rounded-2xl bg-zinc-900 border border-rose-500/40 flex items-center justify-between gap-3 animate-pulse">
@@ -437,24 +617,31 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat, onBack, className = ''
               </button>
             </div>
           ) : (
-            /* Text Input */
-            <div className="flex-1 min-w-0 relative">
+            /* Input container with Attach button inside on the left */
+            <div className="flex-1 min-w-0 relative flex items-center bg-zinc-900 rounded-2xl border border-zinc-800/80 focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500/50 transition-all">
+              {/* Attach Button (inside input, left corner) */}
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="pl-3.5 pr-2 py-3 text-zinc-400 hover:text-indigo-400 transition-colors cursor-pointer flex-shrink-0 self-end mb-1"
+                title="Anexar foto ou arquivo .txt"
+              >
+                <Paperclip className="w-5 h-5" />
+              </button>
+
               <textarea
                 ref={textareaRef}
                 rows={1}
                 value={inputVal}
                 onChange={(e) => setInputVal(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Digite uma mensagem..."
-                className="w-full max-h-36 min-h-[46px] py-3 px-4 rounded-2xl bg-zinc-900 border border-zinc-800/80 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50 text-zinc-100 placeholder:text-zinc-500 text-sm leading-relaxed resize-none outline-none transition-all block"
+                placeholder={pendingAttachment ? 'Adicione uma legenda...' : 'Digite uma mensagem...'}
+                className="w-full max-h-36 min-h-[46px] py-3 pr-4 pl-1 bg-transparent text-zinc-100 placeholder:text-zinc-500 text-sm leading-relaxed resize-none outline-none block"
               />
             </div>
           )}
 
-          {/* 
-            Audio recording button:
-            Positioned immediately to the LEFT of the send button!
-          */}
+          {/* Audio recording button */}
           {isRecording ? (
             <button
               type="button"
@@ -477,7 +664,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat, onBack, className = ''
 
               <button
                 type="submit"
-                disabled={!inputVal.trim() || sending}
+                disabled={(!inputVal.trim() && !pendingAttachment) || sending}
                 className="w-[46px] h-[46px] rounded-2xl bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white flex items-center justify-center transition-all shadow-md shadow-indigo-600/30 disabled:opacity-30 disabled:pointer-events-none cursor-pointer flex-shrink-0"
                 title="Enviar mensagem"
               >
@@ -491,6 +678,26 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat, onBack, className = ''
           )}
         </form>
       </div>
+
+      {/* Message Action Menu Modal (Long-press / right-click) */}
+      <MessageActionMenu
+        isOpen={Boolean(selectedMessageForAction)}
+        message={selectedMessageForAction}
+        currentUserId={userProfile?.userId || ''}
+        onClose={() => setSelectedMessageForAction(null)}
+        onEdit={(msg) => setMessageToEdit(msg)}
+        onDeleteForMe={(msg) => handleDeleteForMe(msg)}
+        onDeleteForEveryone={(msg) => handleDeleteForEveryone(msg)}
+        onTogglePin={(msg) => handleTogglePin(msg)}
+      />
+
+      {/* Edit Message Modal */}
+      <EditMessageModal
+        isOpen={Boolean(messageToEdit)}
+        message={messageToEdit}
+        onClose={() => setMessageToEdit(null)}
+        onSave={handleEditMessage}
+      />
 
       {/* Group Info Modal */}
       {showGroupInfo && isGroup && (
