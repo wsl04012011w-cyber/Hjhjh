@@ -1,0 +1,101 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // User profiles
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId);
+      allow list: if false;
+      allow create: if isOwner(userId)
+                    && incoming().userId == userId
+                    && incoming().displayName is string
+                    && incoming().displayName.size() <= 60
+                    && incoming().shortId is string
+                    && incoming().shortId.size() == 8;
+      allow update: if isOwner(userId)
+                    && incoming().userId == userId
+                    && incoming().displayName is string
+                    && incoming().displayName.size() <= 60;
+      allow delete: if false;
+    }
+
+    // Short ID lookup directory (for adding friends by 8-char code)
+    match /userDirectory/{shortId} {
+      allow get: if isSignedIn() && shortId is string && shortId.size() == 8;
+      allow list: if false;
+      allow create: if isSignedIn()
+                    && incoming().userId == request.auth.uid
+                    && incoming().shortId == shortId
+                    && shortId.matches('^[A-Z0-9]{8}$');
+      allow update: if isSignedIn()
+                    && incoming().userId == request.auth.uid
+                    && existing().userId == request.auth.uid;
+      allow delete: if false;
+    }
+
+    // Chats collection
+    match /chats/{chatId} {
+      allow get: if isSignedIn()
+                 && isValidId(chatId)
+                 && request.auth.uid in existing().participants;
+      allow list: if isSignedIn()
+                  && request.auth.uid in existing().participants;
+      allow create: if isSignedIn()
+                    && isValidId(chatId)
+                    && incoming().createdBy == request.auth.uid
+                    && request.auth.uid in incoming().participants
+                    && incoming().participants.size() >= 1
+                    && incoming().participants.size() <= 100;
+      allow update: if isSignedIn()
+                    && isValidId(chatId)
+                    && request.auth.uid in existing().participants
+                    && request.auth.uid in incoming().participants;
+      allow delete: if isSignedIn()
+                    && isValidId(chatId)
+                    && existing().createdBy == request.auth.uid;
+
+      // Messages subcollection
+      match /messages/{messageId} {
+        function isParticipantOfChat() {
+          return isSignedIn()
+                 && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+        }
+
+        allow get, list: if isParticipantOfChat();
+        allow create: if isParticipantOfChat()
+                      && incoming().senderId == request.auth.uid
+                      && incoming().text is string
+                      && incoming().text.size() > 0
+                      && incoming().text.size() <= 2000;
+        allow update: if isParticipantOfChat();
+        allow delete: if isParticipantOfChat() && existing().senderId == request.auth.uid;
+      }
+    }
+  }
+}

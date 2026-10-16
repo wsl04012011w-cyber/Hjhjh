@@ -1,0 +1,90 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Public and user-accessible profile including short 8-character ID",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Auth UID" },
+        "shortId": { "type": "string", "minLength": 8, "maxLength": 8, "pattern": "^[A-Z0-9]{8}$", "description": "Unique 8-character alphanumeric user friend code" },
+        "displayName": { "type": "string", "maxLength": 50, "description": "Display name of the user" },
+        "avatarColor": { "type": "string", "maxLength": 20, "description": "Hex or tailwind color name for avatar" },
+        "photoURL": { "type": "string", "maxLength": 500, "description": "Custom avatar URL or base64 data" },
+        "status": { "type": "string", "enum": ["online", "away", "busy", "offline"], "description": "Presence status" },
+        "statusMessage": { "type": "string", "maxLength": 100, "description": "Custom bio or status note" },
+        "createdAt": { "type": "string", "description": "ISO timestamp" },
+        "updatedAt": { "type": "string", "description": "ISO timestamp" }
+      },
+      "required": ["userId", "shortId", "displayName", "avatarColor", "status"]
+    },
+    "UserDirectoryEntry": {
+      "title": "UserDirectoryEntry",
+      "description": "Index mapped by shortId for instantaneous 1:1 and group search",
+      "type": "object",
+      "properties": {
+        "shortId": { "type": "string", "minLength": 8, "maxLength": 8, "pattern": "^[A-Z0-9]{8}$" },
+        "userId": { "type": "string" },
+        "displayName": { "type": "string", "maxLength": 50 },
+        "avatarColor": { "type": "string", "maxLength": 20 },
+        "photoURL": { "type": "string", "maxLength": 500 },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["shortId", "userId", "displayName"]
+    },
+    "Chat": {
+      "title": "Chat",
+      "description": "A 1-on-1 direct conversation or group chat",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["direct", "group"] },
+        "name": { "type": "string", "maxLength": 60, "description": "Group name or empty for direct" },
+        "createdBy": { "type": "string", "description": "Creator UID" },
+        "participants": { "type": "array", "description": "Array of participant UIDs" },
+        "lastMessageText": { "type": "string", "maxLength": 2000, "description": "Preview of latest message" },
+        "lastMessageSenderId": { "type": "string" },
+        "lastMessageSenderName": { "type": "string", "maxLength": 50 },
+        "lastMessageAt": { "type": "string", "description": "Timestamp for ordering" },
+        "unreadBy": { "type": "array", "description": "Array of participant UIDs who have unread messages" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "type", "createdBy", "participants"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Text message within a chat",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "chatId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string", "maxLength": 50 },
+        "senderAvatarColor": { "type": "string", "maxLength": 20 },
+        "senderPhotoURL": { "type": "string", "maxLength": 500 },
+        "text": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "readBy": { "type": "array", "description": "Array of user IDs who have seen this message" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "chatId", "senderId", "senderName", "text"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User profiles indexed by UID"
+    },
+    "/userDirectory/{shortId}": {
+      "schema": { "$ref": "#/entities/UserDirectoryEntry" },
+      "description": "Public search index mapping 8-char short ID to user profile info"
+    },
+    "/chats/{chatId}": {
+      "schema": { "$ref": "#/entities/Chat" },
+      "description": "Chats (direct messages and group conversations)"
+    },
+    "/chats/{chatId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/Message" },
+      "description": "Messages inside a chat"
+    }
+  }
+}

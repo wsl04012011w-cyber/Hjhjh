@@ -1,0 +1,6 @@
+{
+  "name": "Papo",
+  "description": "Aplicativo de mensagens instantâneas simples e moderno para amigos, com chats diretos e em grupo, IDs únicos e sincronização em tempo real.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
