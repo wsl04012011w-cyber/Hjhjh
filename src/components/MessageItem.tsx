@@ -1,6 +1,7 @@
 import React from 'react';
 import { Message } from '../types/chat';
 import { Avatar } from './Avatar';
+import { AudioPlayer } from './AudioPlayer';
 import { formatMessageTime } from '../lib/utils';
 import { Check, CheckCheck } from 'lucide-react';
 
@@ -19,6 +20,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
 }) => {
   const isRead = message.readBy && message.readBy.length > 1;
   const timeFormatted = formatMessageTime(message.createdAt);
+  const isAudio = Boolean(message.audioData);
 
   if (isCurrentUser) {
     // Current user's message: Aligned to the RIGHT in an indigo bubble
@@ -26,10 +28,17 @@ export const MessageItem: React.FC<MessageItemProps> = ({
       <div className={`w-full flex justify-end px-2 sm:px-4 ${isSequential ? 'mt-1' : 'mt-2.5'}`}>
         <div className="max-w-[85%] sm:max-w-[75%] md:max-w-[65%] min-w-0 flex flex-col items-end">
           <div className="bg-indigo-600 text-white rounded-2xl rounded-tr-xs px-4 py-2.5 shadow-sm min-w-0 break-words [overflow-wrap:anywhere] break-all">
-            {/* Message text */}
-            <p className="text-sm leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere] break-all select-text">
-              {message.text}
-            </p>
+            {isAudio ? (
+              <AudioPlayer
+                audioSrc={message.audioData!}
+                duration={message.audioDuration}
+                isCurrentUser={true}
+              />
+            ) : (
+              <p className="text-sm leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere] break-all select-text">
+                {message.text}
+              </p>
+            )}
 
             {/* Time & Delivery / Read status */}
             <div className="flex items-center justify-end gap-1 mt-1 -mb-0.5 text-[10px] text-indigo-200 select-none">
@@ -68,7 +77,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
 
       {/* Message bubble */}
       <div className="max-w-[85%] sm:max-w-[75%] md:max-w-[65%] min-w-0 flex flex-col items-start">
-        <div className="bg-zinc-850 bg-zinc-800/90 text-zinc-100 rounded-2xl rounded-tl-xs px-4 py-2.5 shadow-sm border border-zinc-700/50 min-w-0 break-words [overflow-wrap:anywhere] break-all">
+        <div className="bg-zinc-800/95 text-zinc-100 rounded-2xl rounded-tl-xs px-4 py-2.5 shadow-sm border border-zinc-700/50 min-w-0 break-words [overflow-wrap:anywhere] break-all">
           {/* Sender name for group chats */}
           {chatType === 'group' && !isSequential && (
             <p
@@ -79,10 +88,18 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             </p>
           )}
 
-          {/* Message text with complete anti-overflow wrapping */}
-          <p className="text-sm leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere] break-all select-text text-zinc-100">
-            {message.text}
-          </p>
+          {/* Audio player or text message */}
+          {isAudio ? (
+            <AudioPlayer
+              audioSrc={message.audioData!}
+              duration={message.audioDuration}
+              isCurrentUser={false}
+            />
+          ) : (
+            <p className="text-sm leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere] break-all select-text text-zinc-100">
+              {message.text}
+            </p>
+          )}
 
           {/* Timestamp */}
           <div className="flex items-center justify-end mt-1 -mb-0.5 text-[10px] text-zinc-400 select-none">

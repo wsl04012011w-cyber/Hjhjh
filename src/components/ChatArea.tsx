@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { Chat, Message } from '../types/chat';
 import { 
   sendMessage, 
+  sendAudioMessage,
   subscribeToMessages, 
   markChatAsRead 
 } from '../services/chatService';
@@ -16,7 +17,10 @@ import {
   Copy, 
   Check, 
   Info,
-  Sparkles
+  Sparkles,
+  Mic,
+  Trash2,
+  Square
 } from 'lucide-react';
 
 interface ChatAreaProps {
@@ -33,6 +37,15 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat, onBack, className = ''
   const [showGroupInfo, setShowGroupInfo] = useState(false);
   const [copiedId, setCopiedId] = useState(false);
 
+  // Audio recording state
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [audioError, setAudioError] = useState<string | null>(null);
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const timerIntervalRef = useRef<any>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -68,6 +81,16 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat, onBack, className = ''
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
 
+  // Cleanup media recording stream on unmount
+  useEffect(() => {
+    return () => {
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+      }
+    };
+  }, []);
+
   const handleSend = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!inputVal.trim() || !userProfile || sending) return;
@@ -76,11 +99,13 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat, onBack, className = ''
     setInputVal('');
     setSending(true);
 
+    // Blur input so mobile keyboards DO NOT reopen automatically
+    if (textareaRef.current) {
+      textareaRef.current.blur();
+    }
+
     try {
       await sendMessage(chat, userProfile, text);
-      if (textareaRef.current) {
-        textareaRef.current.focus();
-      }
     } catch (error) {
       console.error('Erro ao enviar mensagem:', error);
       setInputVal(text); // Restore on error
@@ -94,6 +119,139 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat, onBack, className = ''
       e.preventDefault();
       handleSend();
     }
+  };
+
+  // Start audio recording
+  const startRecording = async () => {
+    setAudioError(null);
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setAudioError('Gravação de áudio não suportada pelo seu navegador.');
+        return;
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+
+      // Select supported mimeType
+      let mimeType = 'audio/webm;codecs=opus';
+      if (!MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+        if (MediaRecorder.isTypeSupported('audio/mp4')) {
+          mimeType = 'audio/mp4';
+        } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
+          mimeType = 'audio/ogg';
+        } else {
+          mimeType = '';
+        }
+      }
+
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.start(100);
+      setIsRecording(true);
+      setRecordingSeconds(0);
+
+      timerIntervalRef.current = setInterval(() => {
+        setRecordingSeconds((prev) => {
+          if (prev >= 60) {
+            // Auto stop at 60s
+            stopAndSendRecording();
+            return 60;
+          }
+          return prev + 1;
+        });
+      }, 1000);
+    } catch (err: any) {
+      console.error('Erro ao acessar microfone:', err);
+      setAudioError('Permita o acesso ao microfone no navegador para gravar áudios.');
+      setTimeout(() => setAudioError(null), 4000);
+    }
+  };
+
+  // Stop recording and send audio message
+  const stopAndSendRecording = () => {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder || recorder.state === 'inactive') return;
+
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+
+    const currentDuration = recordingSeconds;
+
+    recorder.onstop = async () => {
+      const mimeType = recorder.mimeType || 'audio/webm';
+      const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+
+      // Clean up media stream
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+      }
+
+      setIsRecording(false);
+      setRecordingSeconds(0);
+
+      if (audioBlob.size < 100) {
+        // Empty audio
+        return;
+      }
+
+      // Convert Blob to base64 Data URL
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const base64Data = reader.result as string;
+        if (base64Data && userProfile) {
+          try {
+            setSending(true);
+            await sendAudioMessage(chat, userProfile, base64Data, Math.max(1, currentDuration));
+          } catch (err) {
+            console.error('Erro ao enviar áudio:', err);
+          } finally {
+            setSending(false);
+          }
+        }
+      };
+      reader.readAsDataURL(audioBlob);
+    };
+
+    recorder.stop();
+  };
+
+  // Cancel recording without sending
+  const cancelRecording = () => {
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+
+    audioChunksRef.current = [];
+    setIsRecording(false);
+    setRecordingSeconds(0);
+  };
+
+  const formatSeconds = (sec: number) => {
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
   // Header information
@@ -165,8 +323,9 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat, onBack, className = ''
               )}
             </div>
 
-            <p className="text-[11px] text-zinc-400 truncate">
-              {isGroup ? (
+            {/* Subtitle: Only show for groups (member count) */}
+            {isGroup && (
+              <p className="text-[11px] text-zinc-400 truncate">
                 <button
                   onClick={() => setShowGroupInfo(true)}
                   className="hover:text-indigo-400 transition-colors cursor-pointer flex items-center gap-1"
@@ -174,10 +333,8 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat, onBack, className = ''
                   <span>{memberCount} participantes</span>
                   <Info className="w-3 h-3" />
                 </button>
-              ) : (
-                'Conversa direta e segura'
-              )}
-            </p>
+              </p>
+            )}
           </div>
         </div>
 
@@ -243,33 +400,95 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat, onBack, className = ''
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Redesigned Seamless Message Input */}
-      <div className="p-3 sm:p-4 bg-zinc-950 flex-shrink-0">
-        <form onSubmit={handleSend} className="flex items-end gap-2.5 max-w-4xl mx-auto w-full">
-          <div className="flex-1 min-w-0 relative">
-            <textarea
-              ref={textareaRef}
-              rows={1}
-              value={inputVal}
-              onChange={(e) => setInputVal(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Digite uma mensagem..."
-              className="w-full max-h-36 min-h-[46px] py-3 px-4 rounded-2xl bg-zinc-900 border border-zinc-800/80 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50 text-zinc-100 placeholder:text-zinc-500 text-sm leading-relaxed resize-none outline-none transition-all block"
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={!inputVal.trim() || sending}
-            className="w-[46px] h-[46px] rounded-2xl bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white flex items-center justify-center transition-all shadow-md shadow-indigo-600/30 disabled:opacity-30 disabled:pointer-events-none cursor-pointer flex-shrink-0"
-            title="Enviar mensagem"
-          >
-            {sending ? (
-              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            ) : (
-              <Send className="w-4 h-4 ml-0.5" />
-            )}
+      {/* Audio permission error notice */}
+      {audioError && (
+        <div className="mx-4 mb-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center justify-between">
+          <span>{audioError}</span>
+          <button onClick={() => setAudioError(null)} className="text-amber-400 hover:text-white ml-2">
+            ✕
           </button>
+        </div>
+      )}
+
+      {/* Redesigned Seamless Message & Audio Input */}
+      <div className="p-3 sm:p-4 bg-zinc-950 flex-shrink-0">
+        <form onSubmit={handleSend} className="flex items-end gap-2 max-w-4xl mx-auto w-full">
+          {isRecording ? (
+            /* Active Voice Recording UI */
+            <div className="flex-1 min-h-[46px] px-4 py-2.5 rounded-2xl bg-zinc-900 border border-rose-500/40 flex items-center justify-between gap-3 animate-pulse">
+              <div className="flex items-center gap-2.5">
+                <span className="w-3 h-3 rounded-full bg-rose-500 animate-ping" />
+                <span className="text-xs font-semibold text-rose-300">
+                  Gravando áudio...
+                </span>
+                <span className="font-mono text-xs text-white bg-zinc-800 px-2 py-0.5 rounded-md">
+                  {formatSeconds(recordingSeconds)}
+                </span>
+              </div>
+
+              {/* Cancel recording button */}
+              <button
+                type="button"
+                onClick={cancelRecording}
+                className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                title="Cancelar gravação"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            /* Text Input */
+            <div className="flex-1 min-w-0 relative">
+              <textarea
+                ref={textareaRef}
+                rows={1}
+                value={inputVal}
+                onChange={(e) => setInputVal(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Digite uma mensagem..."
+                className="w-full max-h-36 min-h-[46px] py-3 px-4 rounded-2xl bg-zinc-900 border border-zinc-800/80 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50 text-zinc-100 placeholder:text-zinc-500 text-sm leading-relaxed resize-none outline-none transition-all block"
+              />
+            </div>
+          )}
+
+          {/* 
+            Audio recording button:
+            Positioned immediately to the LEFT of the send button!
+          */}
+          {isRecording ? (
+            <button
+              type="button"
+              onClick={stopAndSendRecording}
+              className="w-[46px] h-[46px] rounded-2xl bg-rose-600 hover:bg-rose-500 active:scale-95 text-white flex items-center justify-center transition-all shadow-md shadow-rose-600/30 cursor-pointer flex-shrink-0"
+              title="Parar e enviar áudio"
+            >
+              <Send className="w-4 h-4 ml-0.5" />
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={startRecording}
+                className="w-[46px] h-[46px] rounded-2xl bg-zinc-900 hover:bg-zinc-800 active:scale-95 text-zinc-300 hover:text-indigo-400 border border-zinc-800 flex items-center justify-center transition-all cursor-pointer flex-shrink-0"
+                title="Gravar áudio"
+              >
+                <Mic className="w-5 h-5" />
+              </button>
+
+              <button
+                type="submit"
+                disabled={!inputVal.trim() || sending}
+                className="w-[46px] h-[46px] rounded-2xl bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white flex items-center justify-center transition-all shadow-md shadow-indigo-600/30 disabled:opacity-30 disabled:pointer-events-none cursor-pointer flex-shrink-0"
+                title="Enviar mensagem"
+              >
+                {sending ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4 ml-0.5" />
+                )}
+              </button>
+            </>
+          )}
         </form>
       </div>
 

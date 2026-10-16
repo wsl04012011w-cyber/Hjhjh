@@ -90,7 +90,8 @@ service cloud.firestore {
                       && incoming().senderId == request.auth.uid
                       && incoming().text is string
                       && incoming().text.size() > 0
-                      && incoming().text.size() <= 2000;
+                      && incoming().text.size() <= 2000
+                      && (!('audioData' in incoming()) || (incoming().audioData is string && incoming().audioData.size() <= 500000));
         allow update: if isParticipantOfChat();
         allow delete: if isParticipantOfChat() && existing().senderId == request.auth.uid;
       }

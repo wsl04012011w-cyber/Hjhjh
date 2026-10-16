@@ -223,6 +223,60 @@ export async function sendMessage(
 }
 
 /**
+ * Sends a voice audio message in a chat with base64 audio data and duration.
+ */
+export async function sendAudioMessage(
+  chat: Chat,
+  currentUser: UserProfile,
+  audioBase64: string,
+  durationSeconds: number
+): Promise<void> {
+  const messagesColRef = collection(db, 'chats', chat.id, 'messages');
+  const chatDocRef = doc(db, 'chats', chat.id);
+
+  try {
+    // 1. Add audio message to subcollection
+    await addDoc(messagesColRef, {
+      chatId: chat.id,
+      senderId: currentUser.userId,
+      senderName: currentUser.displayName,
+      senderAvatarColor: currentUser.avatarColor,
+      senderPhotoURL: currentUser.photoURL || '',
+      text: '🎤 Mensagem de voz',
+      audioData: audioBase64,
+      audioDuration: Math.round(durationSeconds),
+      readBy: [currentUser.userId],
+      createdAt: serverTimestamp(),
+    });
+
+    // 2. Update chat metadata and mark other participants as unread
+    const otherParticipants = chat.participants.filter(id => id !== currentUser.userId);
+    const updatedParticipantDetails = {
+      ...(chat.participantDetails || {}),
+      [currentUser.userId]: {
+        userId: currentUser.userId,
+        displayName: currentUser.displayName,
+        shortId: currentUser.shortId,
+        avatarColor: currentUser.avatarColor,
+        photoURL: currentUser.photoURL || '',
+      }
+    };
+
+    await updateDoc(chatDocRef, {
+      lastMessageText: '🎤 Mensagem de voz',
+      lastMessageSenderId: currentUser.userId,
+      lastMessageSenderName: currentUser.displayName,
+      lastMessageAt: serverTimestamp(),
+      unreadBy: otherParticipants,
+      participantDetails: updatedParticipantDetails,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `chats/${chat.id}/messages`);
+  }
+}
+
+/**
  * Marks messages in the chat as read by current user.
  */
 export async function markChatAsRead(chatId: string, currentUserId: string): Promise<void> {

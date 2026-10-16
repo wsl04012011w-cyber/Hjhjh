@@ -54,6 +54,8 @@ export interface Message {
   senderAvatarColor?: string;
   senderPhotoURL?: string;
   text: string;
+  audioData?: string; // Base64 audio Data URL
+  audioDuration?: number; // Duration in seconds
   readBy: string[];
   createdAt: any;
 }

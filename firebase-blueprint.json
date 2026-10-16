@@ -63,6 +63,8 @@
         "senderAvatarColor": { "type": "string", "maxLength": 20 },
         "senderPhotoURL": { "type": "string", "maxLength": 500 },
         "text": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "audioData": { "type": "string", "maxLength": 500000, "description": "Base64 audio Data URL" },
+        "audioDuration": { "type": "number", "description": "Audio duration in seconds" },
         "readBy": { "type": "array", "description": "Array of user IDs who have seen this message" },
         "createdAt": { "type": "string" }
       },
