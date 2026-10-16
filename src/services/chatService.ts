@@ -51,46 +51,51 @@ export async function createOrGetDirectChat(
   const chatId = `dm_${sortedIds[0]}_${sortedIds[1]}`;
   const chatRef = doc(db, 'chats', chatId);
 
+  // Check if chat already exists
   try {
     const chatSnap = await getDoc(chatRef);
     if (chatSnap.exists()) {
       return chatId;
     }
+  } catch {
+    // If reading non-existent doc throws or fails, proceed to creation
+  }
 
-    const participantDetails: Record<string, ParticipantSummary> = {
-      [currentUser.userId]: {
-        userId: currentUser.userId,
-        displayName: currentUser.displayName,
-        shortId: currentUser.shortId,
-        avatarColor: currentUser.avatarColor,
-        photoURL: currentUser.photoURL || '',
-      },
-      [friend.userId]: {
-        userId: friend.userId,
-        displayName: friend.displayName,
-        shortId: friend.shortId,
-        avatarColor: friend.avatarColor,
-        photoURL: friend.photoURL || '',
-      },
-    };
+  const participantDetails: Record<string, ParticipantSummary> = {
+    [currentUser.userId]: {
+      userId: currentUser.userId,
+      displayName: currentUser.displayName,
+      shortId: currentUser.shortId,
+      avatarColor: currentUser.avatarColor,
+      photoURL: currentUser.photoURL || '',
+    },
+    [friend.userId]: {
+      userId: friend.userId,
+      displayName: friend.displayName,
+      shortId: friend.shortId,
+      avatarColor: friend.avatarColor,
+      photoURL: friend.photoURL || '',
+    },
+  };
 
-    const newChat: Partial<Chat> = {
-      id: chatId,
-      type: 'direct',
-      name: '',
-      createdBy: currentUser.userId,
-      participants: sortedIds,
-      participantDetails,
-      lastMessageText: 'Conversa iniciada',
-      lastMessageSenderId: currentUser.userId,
-      lastMessageSenderName: currentUser.displayName,
-      lastMessageAt: serverTimestamp(),
-      unreadBy: [],
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    };
+  const newChat: Partial<Chat> = {
+    id: chatId,
+    type: 'direct',
+    name: '',
+    createdBy: currentUser.userId,
+    participants: sortedIds,
+    participantDetails,
+    lastMessageText: 'Conversa iniciada',
+    lastMessageSenderId: currentUser.userId,
+    lastMessageSenderName: currentUser.displayName,
+    lastMessageAt: serverTimestamp(),
+    unreadBy: [],
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
 
-    await setDoc(chatRef, newChat);
+  try {
+    await setDoc(chatRef, newChat, { merge: true });
     return chatId;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `chats/${chatId}`);

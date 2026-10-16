@@ -17,7 +17,7 @@ service cloud.firestore {
     }
 
     function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_-]+$');
     }
 
     function incoming() {
@@ -51,19 +51,18 @@ service cloud.firestore {
       allow list: if false;
       allow create: if isSignedIn()
                     && incoming().userId == request.auth.uid
-                    && incoming().shortId == shortId
-                    && shortId.matches('^[A-Z0-9]{8}$');
+                    && incoming().shortId == shortId;
       allow update: if isSignedIn()
-                    && incoming().userId == request.auth.uid
-                    && existing().userId == request.auth.uid;
+                    && incoming().userId == request.auth.uid;
       allow delete: if false;
     }
 
     // Chats collection
     match /chats/{chatId} {
+      // allow get if document does not exist yet (so getDoc can return exists=false without throwing) or if user is participant
       allow get: if isSignedIn()
                  && isValidId(chatId)
-                 && request.auth.uid in existing().participants;
+                 && (resource == null || request.auth.uid in resource.data.participants);
       allow list: if isSignedIn()
                   && request.auth.uid in existing().participants;
       allow create: if isSignedIn()
@@ -74,8 +73,7 @@ service cloud.firestore {
                     && incoming().participants.size() <= 100;
       allow update: if isSignedIn()
                     && isValidId(chatId)
-                    && request.auth.uid in existing().participants
-                    && request.auth.uid in incoming().participants;
+                    && request.auth.uid in existing().participants;
       allow delete: if isSignedIn()
                     && isValidId(chatId)
                     && existing().createdBy == request.auth.uid;
