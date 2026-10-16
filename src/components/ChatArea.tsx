@@ -13,7 +13,6 @@ import {
   Send, 
   ArrowLeft, 
   Users, 
-  Smile, 
   Copy, 
   Check, 
   Info,
@@ -26,14 +25,11 @@ interface ChatAreaProps {
   className?: string;
 }
 
-const COMMON_EMOJIS = ['😊', '👍', '❤️', '🔥', '🚀', '🎉', '😂', '💬', '👏', '✨'];
-
 export const ChatArea: React.FC<ChatAreaProps> = ({ chat, onBack, className = '' }) => {
   const { userProfile } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputVal, setInputVal] = useState('');
   const [sending, setSending] = useState(false);
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showGroupInfo, setShowGroupInfo] = useState(false);
   const [copiedId, setCopiedId] = useState(false);
 
@@ -100,13 +96,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat, onBack, className = ''
     }
   };
 
-  const handleAddEmoji = (emoji: string) => {
-    setInputVal((prev) => prev + emoji);
-    if (textareaRef.current) {
-      textareaRef.current.focus();
-    }
-  };
-
   // Header information
   const isGroup = chat.type === 'group';
   const otherParticipant = !isGroup
@@ -131,7 +120,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat, onBack, className = ''
       className={`flex-1 flex flex-col bg-zinc-950 text-zinc-100 h-full overflow-hidden ${className}`}
     >
       {/* Top Chat Header */}
-      <div className="h-16 px-4 border-b border-zinc-800 bg-zinc-900/80 backdrop-blur-md flex items-center justify-between flex-shrink-0 select-none">
+      <div className="h-16 px-4 border-b border-zinc-800/80 bg-zinc-900/60 backdrop-blur-md flex items-center justify-between flex-shrink-0 select-none">
         <div className="flex items-center gap-3 min-w-0">
           {/* Back button on mobile */}
           <button
@@ -208,15 +197,15 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat, onBack, className = ''
       <div className="flex-1 overflow-y-auto py-4 px-2 sm:px-4 space-y-1">
         {messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center p-6 text-zinc-500">
-            <div className="w-16 h-16 rounded-3xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-indigo-400 mb-4 shadow-xl">
-              <Sparkles className="w-8 h-8" />
+            <div className="w-14 h-14 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-indigo-400 mb-3 shadow-xl">
+              <Sparkles className="w-7 h-7" />
             </div>
-            <h3 className="font-bold text-base text-zinc-200">
+            <h3 className="font-bold text-sm sm:text-base text-zinc-200">
               {isGroup ? `Início do grupo ${chat.name}` : `Conversa com ${title}`}
             </h3>
-            <p className="text-xs text-zinc-400 max-w-sm mt-1">
+            <p className="text-xs text-zinc-500 max-w-sm mt-1">
               {isGroup
-                ? 'Este é o começo do seu grupo. Envie a primeira mensagem para quebrar o gelo!'
+                ? 'Este é o começo do seu grupo. Envie uma mensagem para começar!'
                 : `Você e ${title} estão conectados. Mande uma mensagem agora!`}
             </p>
           </div>
@@ -254,66 +243,34 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ chat, onBack, className = ''
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Emoji Bar Picker */}
-      {showEmojiPicker && (
-        <div className="px-4 py-2 bg-zinc-900/90 border-t border-zinc-800 flex items-center gap-1.5 overflow-x-auto select-none animate-in fade-in slide-in-from-bottom-2 duration-150">
-          <span className="text-xs text-zinc-500 mr-1 flex-shrink-0">Emojis:</span>
-          {COMMON_EMOJIS.map((emoji) => (
-            <button
-              key={emoji}
-              onClick={() => handleAddEmoji(emoji)}
-              className="p-1.5 hover:bg-zinc-800 rounded-lg text-lg transition-transform hover:scale-125 cursor-pointer flex-shrink-0"
-            >
-              {emoji}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Input Message Box */}
-      <div className="p-3 sm:p-4 bg-zinc-900/90 border-t border-zinc-800/80">
-        <form onSubmit={handleSend} className="flex items-end gap-2">
-          <button
-            type="button"
-            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-            className={`p-2.5 rounded-xl transition-colors cursor-pointer flex-shrink-0 ${
-              showEmojiPicker
-                ? 'bg-indigo-600 text-white'
-                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
-            }`}
-            title="Inserir emojis"
-          >
-            <Smile className="w-5 h-5" />
-          </button>
-
-          <div className="flex-1 relative">
+      {/* Redesigned Seamless Message Input */}
+      <div className="p-3 sm:p-4 bg-zinc-950 flex-shrink-0">
+        <form onSubmit={handleSend} className="flex items-end gap-2.5 max-w-4xl mx-auto w-full">
+          <div className="flex-1 min-w-0 relative">
             <textarea
               ref={textareaRef}
               rows={1}
               value={inputVal}
               onChange={(e) => setInputVal(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={`Mensagem para ${title}... (Enter para enviar)`}
-              className="w-full max-h-32 min-h-[42px] px-3.5 py-2.5 rounded-xl bg-zinc-800/80 border border-zinc-700/80 focus:border-indigo-500 focus:outline-none text-zinc-100 placeholder:text-zinc-500 text-sm resize-none transition-colors"
+              placeholder="Digite uma mensagem..."
+              className="w-full max-h-36 min-h-[46px] py-3 px-4 rounded-2xl bg-zinc-900 border border-zinc-800/80 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50 text-zinc-100 placeholder:text-zinc-500 text-sm leading-relaxed resize-none outline-none transition-all block"
             />
           </div>
 
           <button
             type="submit"
             disabled={!inputVal.trim() || sending}
-            className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition-all shadow-md active:scale-95 disabled:opacity-40 disabled:pointer-events-none cursor-pointer flex-shrink-0"
+            className="w-[46px] h-[46px] rounded-2xl bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white flex items-center justify-center transition-all shadow-md shadow-indigo-600/30 disabled:opacity-30 disabled:pointer-events-none cursor-pointer flex-shrink-0"
             title="Enviar mensagem"
           >
             {sending ? (
-              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
             ) : (
-              <Send className="w-5 h-5" />
+              <Send className="w-4 h-4 ml-0.5" />
             )}
           </button>
         </form>
-        <p className="text-[10px] text-zinc-500 mt-1.5 pl-1 hidden sm:block">
-          Dica: Pressione <kbd className="px-1 py-0.5 rounded bg-zinc-800 text-zinc-400">Enter</kbd> para enviar e <kbd className="px-1 py-0.5 rounded bg-zinc-800 text-zinc-400">Shift + Enter</kbd> para quebrar linha.
-        </p>
       </div>
 
       {/* Group Info Modal */}

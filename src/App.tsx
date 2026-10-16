@@ -93,16 +93,18 @@ const MainApp: React.FC = () => {
 
       {/* 
         Floating Action Button in the bottom-right corner:
-        Opens the Friends screen / modal with the friends list and button to add new friend.
+        Opens the Friends screen / modal. Hides automatically when inside a chat conversation!
       */}
-      <button
-        onClick={() => setIsFriendsModalOpen(true)}
-        className="fixed bottom-5 right-5 z-40 flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs sm:text-sm shadow-xl shadow-indigo-600/30 transition-all hover:scale-105 active:scale-95 cursor-pointer border border-indigo-400/20"
-        title="Amigos e Adicionar"
-      >
-        <Users className="w-4 h-4 sm:w-5 sm:h-5" />
-        <span>Amigos</span>
-      </button>
+      {!activeChatId && (
+        <button
+          onClick={() => setIsFriendsModalOpen(true)}
+          className="fixed bottom-5 right-5 z-40 flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs sm:text-sm shadow-xl shadow-indigo-600/30 transition-all hover:scale-105 active:scale-95 cursor-pointer border border-indigo-400/20"
+          title="Amigos e Adicionar"
+        >
+          <Users className="w-4 h-4 sm:w-5 sm:h-5" />
+          <span>Amigos</span>
+        </button>
+      )}
 
       {/* Friends & Add Friend Modal */}
       <FriendsModal

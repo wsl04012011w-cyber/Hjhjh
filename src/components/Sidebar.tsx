@@ -183,10 +183,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* 
         Minimized Bottom Bar:
-        Contains ONLY the profile avatar.
+        Contains ONLY the profile avatar with NO dividing line.
         When clicked, opens a clean dropdown menu with user info & settings.
       */}
-      <div className="p-3 border-t border-zinc-800 bg-zinc-900/90 dark:bg-zinc-950/90 flex items-center relative">
+      <div className="p-3 bg-zinc-900/90 dark:bg-zinc-950/90 flex items-center relative">
         <div ref={dropdownRef} className="relative">
           <button
             onClick={() => setIsDropdownOpen(!isDropdownOpen)}

@@ -18,81 +18,76 @@ export const MessageItem: React.FC<MessageItemProps> = ({
   chatType,
 }) => {
   const isRead = message.readBy && message.readBy.length > 1;
+  const timeFormatted = formatMessageTime(message.createdAt);
 
+  if (isCurrentUser) {
+    // Current user's message: Aligned to the RIGHT in an indigo bubble
+    return (
+      <div className={`w-full flex justify-end px-2 sm:px-4 ${isSequential ? 'mt-1' : 'mt-2.5'}`}>
+        <div className="max-w-[85%] sm:max-w-[75%] md:max-w-[65%] min-w-0 flex flex-col items-end">
+          <div className="bg-indigo-600 text-white rounded-2xl rounded-tr-xs px-4 py-2.5 shadow-sm min-w-0 break-words [overflow-wrap:anywhere] break-all">
+            {/* Message text */}
+            <p className="text-sm leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere] break-all select-text">
+              {message.text}
+            </p>
+
+            {/* Time & Delivery / Read status */}
+            <div className="flex items-center justify-end gap-1 mt-1 -mb-0.5 text-[10px] text-indigo-200 select-none">
+              <span>{timeFormatted}</span>
+              {isRead ? (
+                <span title="Mensagem lida">
+                  <CheckCheck className="w-3.5 h-3.5 text-indigo-200" />
+                </span>
+              ) : (
+                <span title="Mensagem enviada">
+                  <Check className="w-3.5 h-3.5 text-indigo-300/80" />
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Friend's message: Aligned to the LEFT in a dark zinc bubble with avatar
   return (
-    <div
-      className={`group flex items-start gap-3 px-4 py-1 hover:bg-zinc-800/20 dark:hover:bg-zinc-800/30 transition-colors rounded-xl ${
-        isSequential ? 'mt-0.5' : 'mt-3'
-      }`}
-    >
-      {/* Avatar or spacer for sequential messages */}
+    <div className={`w-full flex justify-start items-end gap-2 px-2 sm:px-4 ${isSequential ? 'mt-1' : 'mt-2.5'}`}>
+      {/* Friend's avatar on the left */}
       {!isSequential ? (
         <Avatar
           name={message.senderName}
           avatarColor={message.senderAvatarColor}
           photoURL={message.senderPhotoURL}
-          size="md"
+          size="sm"
+          className="mb-1 flex-shrink-0"
         />
       ) : (
-        <div className="w-10 flex items-center justify-center flex-shrink-0">
-          <span className="text-[10px] text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity">
-            {formatMessageTime(message.createdAt)?.split(' às ')[1] || ''}
-          </span>
-        </div>
+        <div className="w-8 flex-shrink-0" />
       )}
 
-      {/* Message content */}
-      <div className="flex-1 min-w-0">
-        {!isSequential && (
-          <div className="flex items-center gap-2 mb-0.5">
-            <span
-              className="text-xs font-bold"
+      {/* Message bubble */}
+      <div className="max-w-[85%] sm:max-w-[75%] md:max-w-[65%] min-w-0 flex flex-col items-start">
+        <div className="bg-zinc-850 bg-zinc-800/90 text-zinc-100 rounded-2xl rounded-tl-xs px-4 py-2.5 shadow-sm border border-zinc-700/50 min-w-0 break-words [overflow-wrap:anywhere] break-all">
+          {/* Sender name for group chats */}
+          {chatType === 'group' && !isSequential && (
+            <p
+              className="text-xs font-semibold mb-1 truncate block"
               style={{ color: message.senderAvatarColor || '#818CF8' }}
             >
               {message.senderName}
-            </span>
-            {isCurrentUser && (
-              <span className="text-[10px] text-zinc-400 font-normal">
-                (você)
-              </span>
-            )}
-            <span className="text-[10px] text-zinc-400">
-              {formatMessageTime(message.createdAt)}
-            </span>
-          </div>
-        )}
-
-        {/* Text bubble */}
-        <div className="flex items-end gap-2 flex-wrap">
-          <div
-            className={`text-sm break-words leading-relaxed whitespace-pre-wrap select-text ${
-              isCurrentUser
-                ? 'text-zinc-100'
-                : 'text-zinc-200'
-            }`}
-          >
-            {message.text}
-          </div>
-
-          {/* Delivery & Read Receipts for current user */}
-          {isCurrentUser && (
-            <div
-              className="flex items-center gap-0.5 text-[10px] text-zinc-400 flex-shrink-0 mb-0.5 select-none"
-              title={isRead ? 'Lido' : 'Enviado'}
-            >
-              {isRead ? (
-                <span className="flex items-center gap-0.5 text-indigo-400" title="Mensagem lida">
-                  <CheckCheck className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline text-[9px]">Lido</span>
-                </span>
-              ) : (
-                <span className="flex items-center gap-0.5 text-zinc-400" title="Enviada">
-                  <Check className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline text-[9px]">Enviado</span>
-                </span>
-              )}
-            </div>
+            </p>
           )}
+
+          {/* Message text with complete anti-overflow wrapping */}
+          <p className="text-sm leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere] break-all select-text text-zinc-100">
+            {message.text}
+          </p>
+
+          {/* Timestamp */}
+          <div className="flex items-center justify-end mt-1 -mb-0.5 text-[10px] text-zinc-400 select-none">
+            <span>{timeFormatted}</span>
+          </div>
         </div>
       </div>
     </div>
