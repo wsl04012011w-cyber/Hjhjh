@@ -6,7 +6,7 @@ import {
   addDoc,
   onSnapshot
 } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { db } from '../lib/firebase';
 
 const RTC_CONFIG: RTCConfiguration = {
   iceServers: [
@@ -24,6 +24,7 @@ export class WebRTCVoiceManager {
   private localStream: MediaStream | null = null;
   private remoteStream: MediaStream | null = null;
   private unsubscribes: Array<() => void> = [];
+  private pendingIceCandidates: RTCIceCandidateInit[] = [];
 
   /**
    * Initializes local microphone audio stream with echo cancellation and noise suppression
@@ -62,12 +63,10 @@ export class WebRTCVoiceManager {
     this.pc = new RTCPeerConnection(RTC_CONFIG);
     this.remoteStream = new MediaStream();
 
-    // Add local tracks to peer connection
     localStream.getTracks().forEach((track) => {
       this.pc?.addTrack(track, localStream);
     });
 
-    // Handle remote audio stream
     this.pc.ontrack = (event) => {
       event.streams[0].getTracks().forEach((track) => {
         this.remoteStream?.addTrack(track);
@@ -81,7 +80,6 @@ export class WebRTCVoiceManager {
       };
     }
 
-    // Collect ICE candidates and push to Firestore subcollection
     const callerCandidatesCol = collection(db, 'calls', callId, 'callerCandidates');
     this.pc.onicecandidate = (event) => {
       if (event.candidate) {
@@ -91,7 +89,6 @@ export class WebRTCVoiceManager {
       }
     };
 
-    // Create SDP offer
     const offerDescription = await this.pc.createOffer({
       offerToReceiveAudio: true,
       offerToReceiveVideo: false,
@@ -111,10 +108,11 @@ export class WebRTCVoiceManager {
       const data = snapshot.data();
       if (!this.pc) return;
 
-      if (!this.pc.currentRemoteDescription && data?.answer) {
+      if (data?.answer && this.pc.signalingState === 'have-local-offer') {
         try {
           const answerDescription = new RTCSessionDescription(data.answer);
           await this.pc.setRemoteDescription(answerDescription);
+          this.flushPendingCandidates();
         } catch (err) {
           console.error('Error setting remote description on caller:', err);
         }
@@ -128,8 +126,13 @@ export class WebRTCVoiceManager {
       snapshot.docChanges().forEach(async (change) => {
         if (change.type === 'added' && this.pc) {
           try {
-            const candidate = new RTCIceCandidate(change.doc.data());
-            await this.pc.addIceCandidate(candidate);
+            const candidateInit = change.doc.data() as RTCIceCandidateInit;
+            const candidate = new RTCIceCandidate(candidateInit);
+            if (this.pc.remoteDescription && this.pc.remoteDescription.type) {
+              await this.pc.addIceCandidate(candidate);
+            } else {
+              this.pendingIceCandidates.push(candidateInit);
+            }
           } catch (err) {
             console.warn('Error adding receiver ICE candidate on caller:', err);
           }
@@ -181,41 +184,39 @@ export class WebRTCVoiceManager {
 
     const callDocRef = doc(db, 'calls', callId);
 
-    // Wait until offer is present if needed
+    const handleOffer = async (offerData: any) => {
+      if (!this.pc) return;
+      if (this.pc.signalingState !== 'stable') return;
+
+      try {
+        await this.pc.setRemoteDescription(new RTCSessionDescription(offerData));
+        this.flushPendingCandidates();
+
+        const answerDescription = await this.pc.createAnswer();
+        await this.pc.setLocalDescription(answerDescription);
+
+        await updateDoc(callDocRef, {
+          answer: {
+            type: answerDescription.type,
+            sdp: answerDescription.sdp,
+          },
+        });
+      } catch (err) {
+        console.error('Error handling offer on receiver:', err);
+      }
+    };
+
     const callSnap = await getDoc(callDocRef);
     let callData = callSnap.data();
 
     if (callData?.offer) {
-      await this.pc.setRemoteDescription(new RTCSessionDescription(callData.offer));
-      const answerDescription = await this.pc.createAnswer();
-      await this.pc.setLocalDescription(answerDescription);
-
-      await updateDoc(callDocRef, {
-        answer: {
-          type: answerDescription.type,
-          sdp: answerDescription.sdp,
-        },
-      });
+      await handleOffer(callData.offer);
     } else {
-      // If offer is still being generated, subscribe and wait for it
       const unsubOffer = onSnapshot(callDocRef, async (snapshot) => {
         const data = snapshot.data();
-        if (data?.offer && this.pc && !this.pc.currentRemoteDescription) {
-          try {
-            await this.pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-            const answerDescription = await this.pc.createAnswer();
-            await this.pc.setLocalDescription(answerDescription);
-
-            await updateDoc(callDocRef, {
-              answer: {
-                type: answerDescription.type,
-                sdp: answerDescription.sdp,
-              },
-            });
-            unsubOffer();
-          } catch (err) {
-            console.error('Error handling offer on receiver:', err);
-          }
+        if (data?.offer && this.pc && this.pc.signalingState === 'stable') {
+          unsubOffer();
+          await handleOffer(data.offer);
         }
       });
       this.unsubscribes.push(unsubOffer);
@@ -227,8 +228,13 @@ export class WebRTCVoiceManager {
       snapshot.docChanges().forEach(async (change) => {
         if (change.type === 'added' && this.pc) {
           try {
-            const candidate = new RTCIceCandidate(change.doc.data());
-            await this.pc.addIceCandidate(candidate);
+            const candidateInit = change.doc.data() as RTCIceCandidateInit;
+            const candidate = new RTCIceCandidate(candidateInit);
+            if (this.pc.remoteDescription && this.pc.remoteDescription.type) {
+              await this.pc.addIceCandidate(candidate);
+            } else {
+              this.pendingIceCandidates.push(candidateInit);
+            }
           } catch (err) {
             console.warn('Error adding caller ICE candidate on receiver:', err);
           }
@@ -236,6 +242,20 @@ export class WebRTCVoiceManager {
       });
     });
     this.unsubscribes.push(unsubCallerCandidates);
+  }
+
+  private async flushPendingCandidates() {
+    if (!this.pc) return;
+    while (this.pendingIceCandidates.length > 0) {
+      const candidateInit = this.pendingIceCandidates.shift();
+      if (candidateInit) {
+        try {
+          await this.pc.addIceCandidate(new RTCIceCandidate(candidateInit));
+        } catch (err) {
+          console.warn('Error flushing pending ICE candidate:', err);
+        }
+      }
+    }
   }
 
   /**
@@ -261,6 +281,7 @@ export class WebRTCVoiceManager {
       }
     });
     this.unsubscribes = [];
+    this.pendingIceCandidates = [];
 
     if (this.localStream) {
       this.localStream.getTracks().forEach((track) => track.stop());
