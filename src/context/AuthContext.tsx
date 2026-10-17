@@ -3,6 +3,7 @@ import {
   User, 
   onAuthStateChanged, 
   signInWithPopup, 
+  signInWithCredential,
   signOut as firebaseSignOut 
 } from 'firebase/auth';
 import { 
@@ -15,6 +16,20 @@ import {
 import { auth, db, googleProvider, handleFirestoreError, OperationType } from '../lib/firebase';
 import { UserProfile, UserDirectoryEntry, PresenceStatus } from '../types/chat';
 import { generateShortId, getRandomAvatarColor } from '../lib/utils';
+
+declare global {
+  interface Window {
+    papoNativeAuth?: {
+      postMessage: (message: string) => void;
+    };
+  }
+}
+
+type NativeGoogleTokenEvent = CustomEvent<{ idToken?: string }>;
+type NativeGoogleErrorEvent = CustomEvent<{ message?: string }>;
+
+const NATIVE_GOOGLE_TOKEN_EVENT = 'papo-native-google-id-token';
+const NATIVE_GOOGLE_ERROR_EVENT = 'papo-native-google-auth-error';
 
 interface AuthContextType {
   currentUser: User | null;
@@ -154,14 +169,69 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const loginWithGoogle = async () => {
     try {
       setError(null);
+
+      // No APK, o Android autentica fora do WebView e entrega somente o ID token.
+      // No navegador normal, o fluxo original de popup continua igual.
+      if (typeof window !== 'undefined' && window.papoNativeAuth?.postMessage) {
+        await new Promise<void>((resolve, reject) => {
+          let finished = false;
+          let timeoutId = 0;
+
+          const cleanup = () => {
+            if (finished) return;
+            finished = true;
+            window.clearTimeout(timeoutId);
+            window.removeEventListener(NATIVE_GOOGLE_TOKEN_EVENT, onToken);
+            window.removeEventListener(NATIVE_GOOGLE_ERROR_EVENT, onNativeError);
+          };
+
+          const onToken = (event: Event) => {
+            const idToken = (event as NativeGoogleTokenEvent).detail?.idToken;
+            if (!idToken) {
+              cleanup();
+              reject(new Error('O Google não retornou um token de autenticação.'));
+              return;
+            }
+
+            cleanup();
+            void signInWithCredential(auth, GoogleAuthProvider.credential(idToken))
+              .then(() => resolve())
+              .catch(reject);
+          };
+
+          const onNativeError = (event: Event) => {
+            const message = (event as NativeGoogleErrorEvent).detail?.message;
+            cleanup();
+            reject(new Error(message || 'Não foi possível concluir o login com Google.'));
+          };
+
+          window.addEventListener(NATIVE_GOOGLE_TOKEN_EVENT, onToken);
+          window.addEventListener(NATIVE_GOOGLE_ERROR_EVENT, onNativeError);
+
+          timeoutId = window.setTimeout(() => {
+            cleanup();
+            reject(new Error('O login com Google demorou demais. Tente novamente.'));
+          }, 120000);
+
+          try {
+            window.papoNativeAuth!.postMessage('googleSignIn');
+          } catch (error) {
+            cleanup();
+            reject(error);
+          }
+        });
+        return;
+      }
+
       await signInWithPopup(auth, googleProvider);
     } catch (err: any) {
       console.error('Falha no login com Google:', err);
-      // Clean user-friendly message for popup closed or canceled
-      if (err.code === 'auth/popup-closed-by-user') {
+      // Fechar o seletor do Google é uma ação normal do usuário.
+      if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
         return;
       }
-      setError(err?.message || 'Não foi possível autenticar com o Google. Tente novamente.');
+      const message = err?.message || 'Não foi possível autenticar com o Google. Tente novamente.';
+      setError(message);
       throw err;
     }
   };
