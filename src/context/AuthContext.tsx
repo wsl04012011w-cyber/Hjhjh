@@ -1,10 +1,11 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { 
   User, 
-  GoogleAuthProvider,
   onAuthStateChanged, 
-  signInWithPopup, 
-  signInWithCredential,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
+  updateProfile,
   signOut as firebaseSignOut 
 } from 'firebase/auth';
 import { 
@@ -14,29 +15,17 @@ import {
   updateDoc, 
   onSnapshot 
 } from 'firebase/firestore';
-import { auth, db, googleProvider, handleFirestoreError, OperationType } from '../lib/firebase';
-import { UserProfile, UserDirectoryEntry, PresenceStatus } from '../types/chat';
+import { auth, db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { UserProfile, UserDirectoryEntry } from '../types/chat';
 import { generateShortId, getRandomAvatarColor } from '../lib/utils';
-
-declare global {
-  interface Window {
-    papoNativeAuth?: {
-      postMessage: (message: string) => void;
-    };
-  }
-}
-
-type NativeGoogleTokenEvent = CustomEvent<{ idToken?: string }>;
-type NativeGoogleErrorEvent = CustomEvent<{ message?: string }>;
-
-const NATIVE_GOOGLE_TOKEN_EVENT = 'papo-native-google-id-token';
-const NATIVE_GOOGLE_ERROR_EVENT = 'papo-native-google-auth-error';
 
 interface AuthContextType {
   currentUser: User | null;
   userProfile: UserProfile | null;
   loading: boolean;
-  loginWithGoogle: () => Promise<void>;
+  loginWithEmail: (email: string, pass: string) => Promise<void>;
+  registerWithEmail: (displayName: string, email: string, pass: string) => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
   logout: () => Promise<void>;
   updateUserProfile: (data: Partial<UserProfile>) => Promise<void>;
   error: string | null;
@@ -47,7 +36,9 @@ const AuthContext = createContext<AuthContextType>({
   currentUser: null,
   userProfile: null,
   loading: true,
-  loginWithGoogle: async () => {},
+  loginWithEmail: async () => {},
+  registerWithEmail: async () => {},
+  resetPassword: async () => {},
   logout: async () => {},
   updateUserProfile: async () => {},
   error: null,
@@ -77,7 +68,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
 
           if (!userSnap.exists()) {
-            // First time login: generate unique 8-character short ID
+            // First time login/register: generate unique 8-character short ID
             const shortId = generateShortId();
             const now = new Date().toISOString();
             
@@ -167,80 +158,69 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
-  const loginWithGoogle = async () => {
+  const loginWithEmail = async (email: string, pass: string) => {
     try {
       setError(null);
-
-      // No APK, o Android autentica fora do WebView e entrega somente o ID token.
-      // No navegador normal, o fluxo original de popup continua igual.
-      if (typeof window !== 'undefined' && window.papoNativeAuth?.postMessage) {
-        await new Promise<void>((resolve, reject) => {
-          let finished = false;
-          let timeoutId = 0;
-
-          const cleanup = () => {
-            if (finished) return;
-            finished = true;
-            window.clearTimeout(timeoutId);
-            window.removeEventListener(NATIVE_GOOGLE_TOKEN_EVENT, onToken);
-            window.removeEventListener(NATIVE_GOOGLE_ERROR_EVENT, onNativeError);
-          };
-
-          const onToken = (event: Event) => {
-            const idToken = (event as NativeGoogleTokenEvent).detail?.idToken;
-            if (!idToken) {
-              cleanup();
-              reject(new Error('O Google não retornou um token de autenticação.'));
-              return;
-            }
-
-            cleanup();
-            void signInWithCredential(auth, GoogleAuthProvider.credential(idToken))
-              .then(() => resolve())
-              .catch(reject);
-          };
-
-          const onNativeError = (event: Event) => {
-            const message = (event as NativeGoogleErrorEvent).detail?.message;
-            cleanup();
-            reject(new Error(message || 'Não foi possível concluir o login com Google.'));
-          };
-
-          window.addEventListener(NATIVE_GOOGLE_TOKEN_EVENT, onToken);
-          window.addEventListener(NATIVE_GOOGLE_ERROR_EVENT, onNativeError);
-
-          timeoutId = window.setTimeout(() => {
-            cleanup();
-            reject(new Error('O login com Google demorou demais. Tente novamente.'));
-          }, 120000);
-
-          try {
-            window.papoNativeAuth!.postMessage('googleSignIn');
-          } catch (error) {
-            cleanup();
-            reject(error);
-          }
-        });
-        return;
-      }
-
-      await signInWithPopup(auth, googleProvider);
+      await signInWithEmailAndPassword(auth, email.trim(), pass);
     } catch (err: any) {
-      console.error('Falha no login com Google:', err);
-      // Fechar o seletor do Google é uma ação normal do usuário.
-      if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
-        return;
+      console.error('Falha no login:', err);
+      let msg = 'Não foi possível entrar. Verifique seu e-mail e senha.';
+      if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
+        msg = 'E-mail ou senha incorretos.';
+      } else if (err.code === 'auth/too-many-requests') {
+        msg = 'Muitas tentativas sem sucesso. Tente novamente mais tarde.';
+      } else if (err.code === 'auth/invalid-email') {
+        msg = 'E-mail inválido.';
       }
-      const message = err?.message || 'Não foi possível autenticar com o Google. Tente novamente.';
-      setError(message);
-      throw err;
+      setError(msg);
+      throw new Error(msg);
+    }
+  };
+
+  const registerWithEmail = async (displayName: string, email: string, pass: string) => {
+    try {
+      setError(null);
+      const userCred = await createUserWithEmailAndPassword(auth, email.trim(), pass);
+      if (userCred.user) {
+        await updateProfile(userCred.user, {
+          displayName: displayName.trim(),
+        });
+      }
+    } catch (err: any) {
+      console.error('Falha no cadastro:', err);
+      let msg = 'Não foi possível criar a conta. Tente novamente.';
+      if (err.code === 'auth/email-already-in-use') {
+        msg = 'Este e-mail já está cadastrado.';
+      } else if (err.code === 'auth/weak-password') {
+        msg = 'A senha deve ter pelo menos 6 caracteres.';
+      } else if (err.code === 'auth/invalid-email') {
+        msg = 'E-mail inválido.';
+      }
+      setError(msg);
+      throw new Error(msg);
+    }
+  };
+
+  const resetPassword = async (email: string) => {
+    try {
+      setError(null);
+      await sendPasswordResetEmail(auth, email.trim());
+    } catch (err: any) {
+      console.error('Erro ao redefinir senha:', err);
+      let msg = 'Não foi possível enviar o e-mail de recuperação.';
+      if (err.code === 'auth/user-not-found') {
+        msg = 'Não há usuário cadastrado com este e-mail.';
+      } else if (err.code === 'auth/invalid-email') {
+        msg = 'E-mail inválido.';
+      }
+      setError(msg);
+      throw new Error(msg);
     }
   };
 
   const logout = async () => {
     try {
       if (currentUser && userProfile) {
-        // Mark as offline
         try {
           await updateDoc(doc(db, 'users', currentUser.uid), {
             status: 'offline',
@@ -275,7 +255,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         handleFirestoreError(err, OperationType.UPDATE, `users/${currentUser.uid}`);
       }
 
-      // If displayName, avatarColor, or photoURL changed, update userDirectory entry too
       if (
         data.displayName !== undefined || 
         data.avatarColor !== undefined || 
@@ -310,7 +289,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         currentUser,
         userProfile,
         loading,
-        loginWithGoogle,
+        loginWithEmail,
+        registerWithEmail,
+        resetPassword,
         logout,
         updateUserProfile,
         error,

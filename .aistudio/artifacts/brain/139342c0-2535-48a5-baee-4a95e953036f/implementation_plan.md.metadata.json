@@ -1,0 +1,6 @@
+{
+  "summary": "Implementation plan for migrating authentication from Google Sign-In to Email/Password with separate login, register, and password reset screens.",
+  "updatedAt": "2026-10-17T16:18:53.206059389Z",
+  "requestFeedback": true,
+  "userFacing": true
+}
